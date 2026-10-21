@@ -1,0 +1,342 @@
+---
+title: "Trial missingness, discontinuation and dropout based on MADRS~10~ Score"
+author: "Rune Haubo B Christensen"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup0, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+options(knitr.kable.NA = '')
+
+# wider output when knit'ing:
+if (isTRUE(getOption("knitr.in.progress")) && !knitr::is_latex_output()) {
+  options(width = 110)
+}
+```
+
+```{r setup, results='hide', message=FALSE, warning=FALSE}
+library(data.table)
+library(mmrm)
+library(emmeans)
+library(CRP)
+library(gt)
+library(ggplot2)
+
+source("20_functions/source_dir.R")
+source_dir("20_functions")
+```
+
+## Get data
+
+```{r}
+dt <- get_analysis_data()[variable == "madrs" & part == "total10"]
+dt <- dt[n_target <= 28]
+
+# Identify treatment levels:  
+trt_levs <- get_trt_levs(dt)
+ref_trt_lev <- trt_levs[1] |> unname()
+dexa_trt_lev <- trt_levs[2] |> unname()
+```
+
+## Observation status
+
+```{r}
+#' Tabulate observation status
+#' 
+#' @description
+#' Observation status can be
+#' 
+#' 1. In window
+#' 2. Out of window 
+#' 3. Not recorded
+#' 
+#' Observations that are Not recorded cover: `now`, `future`, and `late` the 
+#' latter of which are are un-recorded observations where the visit window has 
+#' closed.
+#'
+#' @param data 
+#' @param by.treatment 
+#'
+#' @returns
+#' @export
+#'
+#' @examples
+#' dt <- get_analysis_data()[variable == "madrs" & part == "total10"]
+#' dt <- dt[n_target <= 28]
+#' mk_obs_status(dt, by.treatment = FALSE) |> display_dttab()
+#' mk_obs_status(dt) |> display_dttab()
+mk_obs_status <- function(data, by.treatment = TRUE) {
+  # Check arguments:
+  stopifnot(is.data.table(data) && nrow(data) > 0L,
+            is.logical(by.treatment) && length(by.treatment) == 1L)
+  required_var <- c("trt", "f_visit", "c_ID", "state", "c_FAS", "c_SAS", "value")
+  test_required(required_var, names(data))
+  .data <- data[, .SD, .SDcols = required_var]
+  
+  # Assign BY-variable
+  BY <- if(by.treatment) c("trt", "f_visit") else "f_visit"
+  
+  # Make summary table:
+  .data[state == "in_window" & is.na(value), state := "missing value"]
+  tab <- .data[, .(Subjects        = uniqueN(c_ID),
+                   FAS             = sum(c_FAS == "yes"),
+                   SAS             = sum(c_SAS == "yes"),
+                   "In window"     = sum(state == "in_window"),
+                   "Out of window" = sum(state == "outside_window"),
+                   "Not recorded"  = sum(!grepl("window", state)),
+                   "Missing"       = sum(state == "missing value"),
+                   "Now"           = sum(state == "now"),
+                   "Future"        = sum(state == "future"),
+                   "Late"          = sum(state == "late")),
+               keyby = BY]
+  tab
+
+  # Add percentages:  
+  nms <- c("FAS", "SAS", "In window", "Out of window", "Not recorded", "Missing", "Now", 
+           "Future", "Late")
+  for(nm in nms) tab[, (nm) := paste0(get(nm), "(", format(round(get(nm) / Subjects * 100, 1), 
+                                             nsmall = 1), "%)")]
+  
+  # Add `treatment` column if not in BY-variable:
+  if(!"trt" %in% BY) {
+    tab[, trt := "Any treatment"]
+    setcolorder(tab, "trt")
+  }
+  tab[, Treatment := trt]
+  tab <- tab[, Visit := gsub("day", "Day ", f_visit)]
+  setorder(tab, f_visit, -trt)
+  
+  # Add display_cols attribute:
+  display_cols <- c("Visit", if(by.treatment) "Treatment" else NULL, 
+                    "Subjects", "FAS", "SAS", "In window", 
+                    "Out of window", "Not recorded")
+  attr(tab, "display_cols") <- display_cols  
+
+  # Return
+  tab[]
+}
+```
+
+
+### Observation status tables
+
+Overall:
+```{r}
+X <- mk_obs_status(dt, by.treatment = FALSE)
+X[]
+```
+
+By treatment:
+```{r}
+Xb <- mk_obs_status(dt, by.treatment = TRUE)
+Xb[]
+```
+
+
+### Generate and save observation status `gt`-tables
+
+Generate and save observation status table:
+```{r results='asis'}
+tlf_reg <- get_metadata()
+regi <- tlf_reg[file_stem == "observation_status_overall"]
+table_footers <- get_footers()
+footer_list <- list(abbrev = mk_footer_abbrev(regi, Xb, table_footers),
+                    Note = paste("Status based on observations of MADRS~10~ Score."))
+nms <- c("In window", "Out of window", "Not recorded", "Missing", "Now", "Future", "Late")
+X[f_visit == "day0", (nms) := ""]
+gt_tab <- mk_gt_table(X, footer_list = footer_list) 
+gt_tab
+
+# Save table to file:
+save_gt_table(gt_tab,
+              regi    = regi,
+              verbose = TRUE)
+```
+
+Table by treatment group.
+```{r results='asis'}
+Xb[f_visit == "day0", (nms) := ""]
+gt_tab <- mk_gt_table(Xb, footer_list = footer_list) 
+gt_tab
+
+# Save table to file:
+regi <- tlf_reg[file_stem == "observation_status_by_treatment"]
+save_gt_table(gt_tab, 
+              regi    = regi,
+              verbose = TRUE)
+```
+
+
+## Plot of last available observation 
+
+Plot of average MADRS~10~ Score by last available visit:
+```{r}
+dt <- get_outcome_data("madrs_total10", set = "FAS", estimand = "policy")
+dt1 <- get_missing_state(dt)
+dt2 <- merge(dt, dt1[, -"state"], by = c("ID", "n_target"))
+
+## Select relevant variables:
+d3 <- dt2[, .(ID, f_visit, n_target, trt, state, missing, value0, value, chgbl, 
+              last_in_window)]
+
+## Select data by dropout pattern:
+## This includes values that are NA on intermittent missings:
+d4 <- d3[n_target <= last_in_window]
+
+## Get mean 'value' and 'chgbl' by visit and dropout pattern:
+d5 <- d4[, .(N     = .N, 
+             value = mean(value, na.rm=TRUE),
+             chgbl = mean(chgbl, na.rm=TRUE)), .(n_target, f_visit, last_in_window)]
+d5[, f_last_obs := factor(last_in_window)]
+d5[, i_visit := unclass(f_visit)]
+
+## No. at each dropout pattern:
+d6 <- d5[, .SD[.N], f_last_obs]
+
+## Plot dropout pattern until day 28:
+p <- ggplot(d5, aes(n_target, chgbl, color=f_last_obs)) + 
+  theme_bw() + theme(legend.position = "bottom", 
+                     legend.position.inside = c(.8, .8)) + 
+  geom_line() + 
+  geom_text(data=d6, aes(x=n_target, y=chgbl, label=N), hjust="left", 
+            nudge_x=.4, show.legend =FALSE) + 
+  scale_x_continuous("Days since Randomization", breaks=d5[, unique(n_target)], 
+                     # labels = d5[, unique(f_visit)],
+                     minor_breaks = NULL) + 
+  scale_y_continuous("Mean Change From Baseline", limits=c(NA, NA), 
+                     breaks=seq(10, -14, by=-2), minor=NULL) + 
+  labs(color="Last available visit")
+
+# Save figures:
+ggsave(filename = "40_tlf_source/figures/mean_madrs_by_last_available_visit.png", 
+       plot = p, width = 7, height = 4, scale = 1.2, dpi = 300)
+ggsave(filename = "40_tlf_source/figures/mean_madrs_by_last_available_visit.pdf",
+       plot = p, width = 7, height = 4, scale = 1.2)
+
+p
+```
+
+
+Plot of average MADRS~10~ Score by last available visit and treatment arm:
+```{r}
+## Get mean 'value' and 'chgbl' by visit and dropout pattern:
+d5 <- d4[, .(N     = .N, 
+             value = mean(value, na.rm=TRUE),
+             chgbl = mean(chgbl, na.rm=TRUE)), 
+         .(n_target, f_visit, last_in_window, trt)]
+d5[, f_last_obs := factor(last_in_window)]
+d5[, i_visit := unclass(f_visit)]
+
+## No. at each dropout pattern:
+d6 <- d5[, .SD[.N], .(trt, f_last_obs)]
+
+## Plot dropout pattern until day 28:
+p <- ggplot(d5, aes(n_target, chgbl, color=f_last_obs)) + 
+  theme_bw() + theme(legend.position = "bottom") + 
+  geom_line() + 
+  facet_wrap(~trt, ncol=1, strip.position = "right") + 
+  geom_text(data=d6, aes(x=n_target, y=chgbl, label=N), hjust="left", 
+            nudge_x=.4, show.legend =FALSE) + 
+  scale_x_continuous("Days since Randomization", breaks=d5[, unique(n_target)], 
+                     minor_breaks = NULL) + 
+  scale_y_continuous("Mean Change From Baseline", limits=c(NA, NA), 
+                     breaks=seq(10, -20, by=-2), minor=NULL) + 
+  labs(color="Last available visit")
+
+# Save figures:
+ggsave(filename = "40_tlf_source/figures/mean_madrs_by_last_available_visit_and_trt.png", 
+       plot = p, width = 7, height = 6, scale = 1.2, dpi = 300)
+ggsave(filename = "40_tlf_source/figures/mean_madrs_by_last_available_visit_and_trt.pdf",
+       plot = p, width = 7, height = 6, scale = 1.2)
+
+p
+```
+
+Spaghetti plot of mean MADRS~10~ Score by visit
+```{r}
+d4[, f_last_obs := factor(last_in_window)]
+d4[, i_visit := unclass(f_visit)]
+
+jitter <- position_jitter(width = 0.1)
+legend_text <- "Day of last obs."
+
+p <- ggplot(d4, aes(n_target, value, group=ID)) + 
+  theme_bw() + theme(legend.position = "bottom") +
+  facet_wrap(~ f_last_obs) + 
+  geom_line(position=jitter, alpha=.5) + 
+  scale_x_continuous("Days since Randomization", breaks=d5[, unique(n_target)], 
+                     # labels = d5[, unique(f_visit)],
+                     minor_breaks = NULL) + 
+  scale_y_continuous("MADRS Total 10 Score", # limits=c(0, 44), 
+                     breaks=seq(0, 45, by=5), minor=NULL)
+
+# Save figures:
+ggsave(filename = "40_tlf_source/figures/madrs_spaghetti_plot_by_last_available_visit.png", 
+       plot = p, width = 7, height = 2.5, scale = 1.2, dpi = 300)
+ggsave(filename = "40_tlf_source/figures/madrs_spaghetti_plot_by_last_available_visit.pdf",
+       plot = p, width = 7, height = 2.5, scale = 1.2)
+
+p
+```
+
+
+```{r}
+p <- ggplot(d4, aes(n_target, value, group=ID)) + 
+  theme_bw() + theme(legend.position = "bottom") +
+  facet_grid(trt ~ f_last_obs) + 
+  geom_line(position=jitter, alpha=.5) + 
+  scale_x_continuous("Days since Randomization", breaks=d5[, unique(n_target)], 
+                     # labels = d5[, unique(f_visit)],
+                     minor_breaks = NULL) + 
+  scale_y_continuous("MADRS Total 10 Score", # limits=c(0, 44), 
+                     breaks=seq(0, 45, by=5), minor=NULL)
+
+# Save figures:
+ggsave(filename = "40_tlf_source/figures/madrs_spaghetti_plot_by_last_available_visit_and_trt.png", 
+       plot = p, width = 7, height = 4, scale = 1.2, dpi = 300)
+ggsave(filename = "40_tlf_source/figures/madrs_spaghetti_plot_by_last_available_visit_and_trt.pdf",
+       plot = p, width = 7, height = 4, scale = 1.2)
+
+p
+```
+
+
+## Appendix
+
+
+### **R** session info
+
+```{r}
+sessionInfo()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

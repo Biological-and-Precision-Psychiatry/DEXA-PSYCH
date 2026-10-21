@@ -1,0 +1,349 @@
+---
+title: "Make Baseline Dataset"
+author: "Rune Haubo B Christensen"
+date: "`r Sys.Date()`, original: 2026-03-26"
+output: 
+  html_document:
+    self_contained: yes    
+    toc: yes
+    toc_float: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup0, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+
+# wider output when knit'ing:
+if (isTRUE(getOption("knitr.in.progress")) && !knitr::is_latex_output()) {
+  options(width = 110)
+}
+```
+
+```{r setup, results='hide', message=FALSE}
+## load packages:
+library(data.table)
+library(survival)
+library(writexl)
+library(lubridate)
+library(arsenal)
+library(CRP)
+
+## Load functions:
+source("20_functions/source_dir.R")
+source_dir("20_functions")
+```
+
+## Read data 
+
+Reads file compiled in `01_prepare_data.Rmd`:
+```{r}
+d0 <- get_derived_data()
+```
+
+
+## Make baseline dataset
+
+### Extract baseline data
+
+Extract data from screening visit:
+```{r}
+db1 <- d0[!is.na(rand_id) & c_visit %in% c("screen")]
+# db1[, .N, rep_inst]
+# db1[, .N, variable]
+
+## Check that screening dates are unique:
+db1[, no_dates_per_id := uniqueN(date), ID]
+# db1[, .N, no_dates_per_id]
+stopifnot(db1[, all(no_dates_per_id == 1)])
+
+## convert to wide format:
+convert2wide <- function(data) {
+  .d <- copy(data)
+  .d[, variable2 := fifelse(variable == part, variable, paste0(variable, "_", part))]
+  
+  dn <- if(.d[!is.na(value), .N] == 0) data.table(NULL) else 
+    dcast(.d[!is.na(value)], ID + trt ~ variable2, value.var = "value")
+  dc <- if(.d[!is.na(c_value), .N] == 0) data.table(NULL) else 
+    dcast(.d[!is.na(c_value)], ID + trt ~ variable2, value.var = "c_value")
+  dd <- if(.d[!is.na(d_value), .N] == 0) data.table(NULL) else 
+    dcast(.d[!is.na(d_value)], ID + trt ~ variable2, value.var = "d_value")
+  
+  ll <- list(dn, dc, dd)
+  ll <- ll[sapply(ll, nrow) > 0]
+  if(length(ll) == 0) return(data.table(NULL))
+  if(length(ll) == 1) return(ll[[1]])
+  if(length(ll) >= 2) {
+    res <- ll[[1]]
+    for(i in 2:length(ll)) {
+      res <- merge(res, ll[[i]], by=c("ID", "trt"), all=TRUE, sort=FALSE)
+    }
+    return(res)
+  }
+}
+
+dscreen <- convert2wide(db1)
+dscreen <- merge(unique(db1[, .(ID, screen_dato = date)]),
+                 dscreen, by="ID", all.y=TRUE)
+
+dscreen[, -"screen_komm"]
+```
+
+Extract data from day0 visits:
+```{r}
+db2 <- d0[c_visit == "day0" & !is.na(rand_id)]
+setorder(db2, ID, variable, part, -rep_inst)
+db2 <- db2[, .SD[1], .(ID, variable, part)]
+
+varib <- c("sex", "koen_identitet", "etnicitet", "dep_start", "dep_diagnose_journal",
+           "uddannelse", "arbmark_outcome", 
+           "etnicitet", "rygning", "dep_diagnose_scan", "dep_diagnose_scan_melank",
+           "dep_tidligere",
+           "dep_tidligere_antal", "antal_antidep", "antidep_tidligere_antal",
+           "antidep_tidligere_janej",
+           "psyk_aktuelt_janej", "psyk_aktuelt", "psykter_janej", "psykter_tidligere_janej",
+           "ambulant_indlagt",
+           "alkohol_janej", "alkohol_genstande", "alkohol_skadelig", "alkoholafhaengighed", 
+           "rygning", "pakkeaar", "stoffer_aktuelt", "stoffer_aktuelt_spec", 
+           "stoffer_skadeligt", "stoffer_tidligere", "stoffer_tidligere_spec", 
+           "indkomst",
+           "sysblodtryk", "diablodtryk", "puls", "temp", "respirationsfrekvens", 
+           "hoejde", "vaegt", "mens_janej", "mens_start", "andre_sygdomme_janej",
+           "qtc_interval", "crp",
+           getgrep("^antidep_\\d*_start$", db2[, unique(variable)]),
+           getgrep("^antidep_tidligere_\\d*_start$", db2[, unique(variable)])
+)
+stopifnot(db2[, all(varib %in% variable)])
+
+db2a <- db2[variable %in% varib | 
+              (variable %in% d0[, unique(variable)] & 
+                 part %in% c("total", "total10", "total6", "total17"))]
+
+dday0 <- convert2wide(db2a)
+dday0 <- merge(dday0, unique(db2[, .(ID, d_day0)]), by="ID", all=TRUE)
+dim(dday0)
+```
+
+Merge baseline data from screening and day0 visits:
+```{r}
+dbl <- merge(dscreen, dday0, by=c("ID", "trt"), all=TRUE)
+dim(dbl)
+```
+
+### Derive additional baseline variables
+
+```{r, results='hide'}
+## SEX
+dbl[, c_sex := fifelse(sex == "Kvinde", "Female", "Male")]
+
+
+## AGE
+dbl[, n_age := (d_day0 - foedselsdag)/365.25] # age at day0
+
+
+## BMI
+dbl[, n_bmi := vaegt / (hoejde/100)^2]
+
+
+## CRP
+dbl[, n_crp := crp]
+dbl[substr(crp, 1, 1) == "<", n_crp := NA]
+dbl[, n_crp := comma2numeric(n_crp)]
+dbl[, f_crp2 := factor(fifelse(is.na(n_crp) | n_crp < 2, "<2", ">=2"),
+                       levels = c("<2", ">=2"))]
+dbl[is.na(crp), f_crp2 := NA] # Need to restore NAs from orig 'crp' var
+# dbl[, .N, keyby = f_crp2] |> totpct()
+
+# If f_crp2 has any NAs, we impute using median of the censored variable.
+# This variable is needed for subgroup analyses:
+if(dbl[, any(is.na(f_crp2))]) {
+  dbl[, lwr_crp := 1.0 * grepl("<", crp)]
+  dbl[, lim_crp := fifelse(lwr_crp == 1, comma2numeric(gsub("<", "", crp)), n_crp)]
+  Y <- dbl[!is.na(lim_crp), Surv(time=lim_crp, event=(lwr_crp == 0), type="left")]
+  med_crp <- get_cens_median(Y, digits = 5)[1, median]
+  # If the median it self is censored, we impute by the LLOQ:
+  med_crp <- gsub("<", "", med_crp) |> as.numeric()
+  dbl[, n_crp3 := fifelse(is.na(crp), med_crp, n_crp)]
+  dbl[, f_crp3 := factor(fifelse(is.na(n_crp3) | n_crp3 < 2, "<2", ">=2"),
+                         levels = c("<2", ">=2"))]
+  # dbl[, .N, .(f_crp2, f_crp3)]
+} else {
+  dbl[, f_crp3 := f_crp2]
+}
+stopifnot(dbl[, sum(is.na(f_crp3)) == 0])
+
+## RACE/ETHNICITY
+dbl[, f_race := factor(fifelse(etnicitet == "Kaukasisk", "White", "Other"),
+                        levels = c("White", "Other"))]
+
+## SOMATIC COMORBIDITY
+dbl[, f_somatic_comorbid := factor(fifelse(andre_sygdomme_janej == "Ja", "Yes", "No"),
+                                   levels = c("Yes", "No"))]
+
+## SMOKING
+dbl[, f_smoking := factor(rygning)]
+levels(dbl$f_smoking) <- list("Current" = c("Festryger", "Nuværende ryger"),
+                               "Former" = "Tidligere ryger",
+                               "Never" = "Ikke-ryger")
+
+
+## EMPLOYMENT
+dbl[, f_employment := factor(arbmark_outcome)]
+levels(dbl$f_employment) <- list("Employed" = c("Fuldtidsjob", "Deltidsjob", 
+                                                 "Flexjob eller anden jobordning på nedsat tid"),
+                                  "Student" = "Studerende (fuldtid)", 
+                                  "Sick leave" = c("Sygemeldt (fra job eller studie)",
+                                                   "Førtidspension"),
+                                  "Unemployed" = "Ledig",
+                                  "Other" = "Andet")
+
+## CURRENT USE OF PSYCHOTHERAPY
+dbl[, f_cur_psychotherapy := factor(fifelse(psykter_janej == "Ja", "Yes", "No"),
+                                    levels = c("Yes", "No"))]
+dbl[, .N, keyby = .(f_cur_psychotherapy, psykter_janej)]
+
+## PREVIOUS USE OF PSYCHOTHERAPY
+dbl[, f_prev_psychotherapy := factor(fifelse(psykter_tidligere_janej == "Ja", 
+                                             "Yes", "No"),
+                                     levels = c("Yes", "No"))]
+dbl[, .N, keyby = .(f_prev_psychotherapy, psykter_tidligere_janej)]
+
+## RECURRENT DEPRESSIVE EPISODES
+dbl[!is.na(dep_diagnose_scan), f_dep_recurrent := 
+      factor(fifelse(grepl("periodevis", dep_diagnose_scan), "Yes", "No"),
+             levels = c("Yes", "No"))]
+dbl[, .N, .(f_dep_recurrent, dep_diagnose_scan)]
+
+## DURATION OF CURRENT DEPRESSIVE EPISODE
+dbl[, n_dep_current_duration_days := as.numeric(d_day0 - dep_start)]
+dbl[, f_dep_current_duration := cut(n_dep_current_duration_days, 
+                                    breaks=c(-Inf, 0, 365/2, 365, 2*365, Inf),
+                                    labels=c("<0 yrs", "0 - 1/2 yrs", "1/2 - 1 yrs", "1 - 2 yrs", ">2 yrs"))]
+dbl[, .N, keyby=f_dep_current_duration]
+
+## LIFETIME DEPRESSIVE EPISODES
+dbl[, .N, dep_tidligere]
+dbl[!is.na(dep_tidligere),
+    n_dep_lifetime_episodes := fifelse(dep_tidligere == "Ja", dep_tidligere_antal + 1, 1)]
+dbl[, .N, n_dep_lifetime_episodes]
+
+## DIFFERENT CURRENT OR PREVIOUS PHARMACOLOGICAL TREATMENTS FOR DEPRESSION
+# Based on information in the following 3 variables:
+dbl[, .N, .(antidep_tidligere_janej, antal_antidep, antidep_tidligere_antal)]
+
+dbl[!is.na(antidep_tidligere_janej), antal_antidep_all := 
+      fifelse(antidep_tidligere_janej == "Ja", antal_antidep + antidep_tidligere_antal, antal_antidep)]
+dbl[, .N, antal_antidep_all]
+
+dbl[, .N, keyby=.(antal_antidep, antidep_tidligere_antal)]
+dbl[, f_antal_antidep_all := cut(antal_antidep_all, breaks = c(.5, 1.5, 2.5, Inf),
+                                 labels=c("1", "2", "3+"))]
+dbl[, .N, keyby=.(f_antal_antidep_all)]
+dbl[, .N, keyby=.(f_antal_antidep_all, antal_antidep_all)]
+
+
+## COMORBID PSYCHIATRIC DISORDERS
+dbl[, .N, .(psyk_aktuelt_janej, psyk_aktuelt)]
+dbl[!is.na(psyk_aktuelt_janej) & psyk_aktuelt_janej == "Nej", n_psyk_aktuelt := 0]
+dbl[!is.na(psyk_aktuelt_janej) & psyk_aktuelt_janej == "Ja" & !is.na(psyk_aktuelt), 
+    n_psyk_aktuelt := sapply(strsplit(psyk_aktuelt, ","), length)]
+dbl[, .N, .(psyk_aktuelt_janej, psyk_aktuelt, n_psyk_aktuelt)]
+dbl[, f_psyk_aktuelt := cut(n_psyk_aktuelt, breaks=c(-.1, .5, 1.5, Inf),
+                            labels=c("0", "1", "2+"))]
+dbl[, .N, .(psyk_aktuelt_janej, psyk_aktuelt, n_psyk_aktuelt, f_psyk_aktuelt)]
+dbl[, .N, keyby=f_psyk_aktuelt]
+
+
+## CURRENT TREATMENT SETTING
+dbl[, .N, ambulant_indlagt]
+dbl[, f_ambulant_indlagt := factor(ambulant_indlagt)]
+levels(dbl$f_ambulant_indlagt) <- 
+  list("Hospitalized (in-patient)" = c("Indlagt"),
+       "Psychiatric out-patient clinic" = 
+         "Ambulant (sekundær sektor - eks. henvist til pakkeforløb, fulgt i akutteam)",
+       "General Practitioner (GP)" = c("Privatpraktiserende psykiater", "Egen læge"))
+dbl[, .N, keyby=.(f_ambulant_indlagt, ambulant_indlagt)]
+```
+
+Baseline variables for subgroup analyses:
+```{r, results='hide'}
+## AGE <40 VS. >=40
+dbl[, .(ID, n_age)]
+dbl[, f_age40 := factor(fifelse(n_age < 40, "<40", ">=40"))]
+dbl[, .N, keyby=f_age40]
+
+## BMI <30 VS. >= 30
+dbl[, .(ID, n_bmi)]
+dbl[, f_bmi30 := factor(fifelse(n_bmi < 30, "<30", ">=30"))]
+dbl[, .N, keyby=f_bmi30]
+
+## DEPRESSION SEVERITY: MADRS <= 29 VS. >=30
+dbl[, .(ID, madrs_total10)]
+dbl[, f_madrs10_30 := factor(fifelse(madrs_total10 < 29.5, 
+                                     "Moderate", "Severe"))]
+dbl[, .N, keyby=f_madrs10_30]
+
+## TREATMENT-RESISTANT 
+## no. started antidepressants <2 (no) >= 2 (yes)
+
+# Compute number of antidepressants started between dep_start and d_day0 (both
+# included):
+antidep_start_var <- 
+  c(getgrep("^antidep_\\d*_start$", db2[, unique(variable)]),
+    getgrep("^antidep_tidligere_\\d*_start$", db2[, unique(variable)]))
+
+tmp <- dbl[, .SD, .SDcols = c("ID", "dep_start", "d_day0", antidep_start_var)]
+tmp <- melt(tmp, id.vars = c("ID", "dep_start", "d_day0"))
+tmp <- tmp[!is.na(value)]
+setorder(tmp)
+tmp[, in_interval := fifelse(dep_start <= value & value <= d_day0, 1.0, 0.0)]
+tmp <- tmp[, .(n_antidep_start = sum(in_interval)), by=ID]
+tmp
+dbl <- merge(dbl, tmp, by="ID", all.x=TRUE)
+dbl[is.na(n_antidep_start), n_antidep_start := 0]
+dbl[, .N, n_antidep_start]
+
+dbl[, f_treatment_resistant := factor(fifelse(n_antidep_start >=2, "Yes", "No"))]
+dbl[, f_treatment_resistant := relevel(f_treatment_resistant, "Yes")]
+dbl[, .N, keyby=.(f_treatment_resistant, n_antidep_start)]
+dbl[, .N, keyby=f_treatment_resistant]
+```
+
+
+```{r}
+write_xlsx(dbl, path="02_data_derived/baselinedata.xlsx")
+saveRDS(dbl, file="02_data_derived/baselinedata.rds")
+```
+
+
+## Appendix
+
+
+### **R** session info
+
+```{r}
+sessionInfo()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

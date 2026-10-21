@@ -1,0 +1,210 @@
+---
+title: "Run all: Generate data; run analyses and reports; generate TLF-book"
+author: "Rune Haubo B Christensen"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: yes
+    toc_float: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+## Setup
+
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+
+## Allow duplicate labels:
+options(knitr.duplicate.label = "allow")
+
+# wider output when knit'ing:
+if (isTRUE(getOption("knitr.in.progress")) && !knitr::is_latex_output()) {
+  options(width = 110)
+}
+```
+
+```{r packages_and_functions}
+library(data.table)
+library(digest)
+
+source("20_functions/source_dir.R")
+source_dir("20_functions")
+```
+
+
+## Clear all derived data, checksums, output database, tables and figures, and html-files
+
+```{r clear_all_products}
+# Clear all code-derived data and results:
+# - use `rm_cache = FALSE` to keep cache of computationally heavy stuff
+# - if `rm_checksums = TRUE` new data may be applied because new checksums are 
+#   generated in the next chunk which default to the latest REDCap data export.
+# clear_all(remove             = TRUE,
+#           rm_html            = TRUE,
+#           rm_cache           = FALSE,
+#           rm_checksums       = TRUE)
+
+# For a completely clear run, use:
+clear_all(remove             = TRUE,
+          rm_html            = TRUE,
+          rm_cache           = TRUE,
+          rm_checksums       = TRUE)
+```
+
+Generate checksums for data exported from REDCap:
+```{r make_checksums}
+if(!file.exists("03_checksums") || length(list.files("03_checksums")) < 2) 
+  mk_checksums(date = "latest")
+```
+
+
+## Files in `30_process_data` directory
+
+Make overview of `Rmd` that can be processed:
+```{r 30_process_data}
+DIR <- "30_process_data/"
+filenames <- list.files(DIR, pattern="Rmd$")
+filenames <- filenames[!grepl("^00|^99", filenames)]
+
+render_multiple_rmd(filenames, path = DIR, params = list(
+  import_randomization_list = FALSE,
+  rand_list_path = "L:/Auditdata/DEXA-PSYCH Randomiseringsliste/DEXA-PSYCH-Randomization-list.xlsx",
+  rand_list_sheet_nm = "Pakkelisten",
+  fake_trt_rho = .2))
+```
+
+
+## Files in `32_manual_analyses` directory
+
+Make overview of `Rmd` that can be processed:
+```{r 32_manual_analyses}
+DIR <- "32_manual_analyses/"
+filenames <- list.files(DIR, pattern="Rmd$")
+filenames <- filenames[!grepl("^00|^99", filenames)]
+
+render_multiple_rmd(filenames, path = DIR)
+```
+
+
+## Files in `34_tlf_pipeline` directory
+
+Make overview of `Rmd` that can be processed:
+```{r 34_tlf_pipeline}
+DIR <- "34_tlf_pipeline/"
+filenames <- list.files(DIR, pattern="Rmd$")
+filenames <- filenames[!grepl("^00|^99", filenames)]
+
+render_multiple_rmd(filenames, path = DIR)
+```
+
+
+## Files in `80_parallel_programming` directory
+
+Make overview of `Rmd` that can be processed:
+```{r 80_parallel_programming}
+DIR <- "80_parallel_programming/"
+filenames <- list.files(DIR, pattern="Rmd$")
+filenames <- filenames[!grepl("^00|^99", filenames)]
+
+render_multiple_rmd("01_comparison_of_independent_programming.Rmd", 
+                    path = DIR, 
+                    params = list(stop_on_error = TRUE))
+```
+
+
+## Appendix
+
+```{r mk_fun_appendix_code, include=FALSE, eval=FALSE}
+# To easily generate the appendix-lines below, use the following function:
+mk_fun_appendix_code <- function(file = "20_functions/run_all_fcts.R", roxygen = TRUE) {
+  exprs <- parse("20_functions/run_all_fcts.R", keep.source = TRUE)
+  for(e in exprs) {
+    funname <- as.character(e[[2]])
+    lines <- c("",
+               paste0("#### `", funname, "()`"),
+               "",
+               paste0("```{r ", funname, ", code = get_function_lines(\"20_functions/run_all_fcts.R\", \"", 
+                      funname, "\", roxygen = ", roxygen, ")}"),
+               "```")
+    cat(lines, sep="\n")
+  }
+  invisible(NULL)
+}
+mk_fun_appendix_code(roxygen = TRUE)
+mk_fun_appendix_code(roxygen = FALSE)
+```
+
+
+### Rmd rendering functions
+
+#### `render_multiple_rmd()`
+
+```{r render_multiple_rmd, code = get_function_lines("20_functions/run_all_fcts.R", "render_multiple_rmd", roxygen = TRUE)}
+```
+
+#### `render_rmd()`
+
+```{r render_rmd, code = get_function_lines("20_functions/run_all_fcts.R", "render_rmd", roxygen = TRUE)}
+```
+
+### Clear all results functions
+
+#### `clear_all()`
+
+```{r clear_all, code = get_function_lines("20_functions/run_all_fcts.R", "clear_all", roxygen = TRUE)}
+```
+
+#### `clear_html_pdf_res()`
+
+```{r clear_html_res, code = get_function_lines("20_functions/run_all_fcts.R", "clear_html_pdf_res", roxygen = TRUE)}
+```
+
+#### `clear_data_derived()`
+
+```{r clear_data_derived, code = get_function_lines("20_functions/run_all_fcts.R", "clear_data_derived", roxygen = TRUE)}
+```
+
+#### `clear_checksums()`
+
+```{r clear_checksums, code = get_function_lines("20_functions/run_all_fcts.R", "clear_checksums", roxygen = TRUE)}
+```
+
+#### `clear_outputs()`
+
+```{r clear_outputs, code = get_function_lines("20_functions/run_all_fcts.R", "clear_outputs", roxygen = TRUE)}
+```
+
+#### `clear_output_db()`
+
+```{r clear_output_db, code = get_function_lines("20_functions/run_all_fcts.R", "clear_output_db", roxygen = TRUE)}
+```
+
+#### `clear_cache()`
+
+```{r clear_cache, code = get_function_lines("20_functions/run_all_fcts.R", "clear_cache", roxygen = TRUE)}
+```
+
+#### `clear_tlf_book()`
+
+```{r clear_tlf_book, code = get_function_lines("20_functions/run_all_fcts.R", "clear_tlf_book", roxygen = TRUE)}
+```
+
+#### `clear_par_prog_res()`
+
+```{r clear_par_prog_res, code = get_function_lines("20_functions/run_all_fcts.R", "clear_par_prog_res", roxygen = TRUE)}
+```
+
+### Session info
+
+**R** session info:
+```{r}
+sessionInfo()
+```
+
+
+
+
+
+

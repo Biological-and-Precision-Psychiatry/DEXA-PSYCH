@@ -1,0 +1,18 @@
+message: "If you use this software, please cite it using these metadata."
+type: software
+title: "Codebase for the DEXA-PSYCH TLF-book covering all pre-specified statistical analyses"
+abstract: "This codebase produces all pre-specified statistical analyses, summaries and results for the DEXA-PSYCH trial (EU reg. nr.: 2022-501428-45-00) and presents them in Tables, Listings and Figures books."
+authors:
+  - given-names: "Rune Haubo Bojesen"
+    family-names: "Christensen"
+    orcid: "https://orcid.org/0000-0002-4494-3399"
+  - given-names: "Eva Nina Sparre"
+    family-names: "Wandall"
+    orcid: "https://orcid.org/0009-0008-1745-6027"
+repository-code: "https://github.com/Biological-and-Precision-Psychiatry/DEXA-PSYCH"
+url: "https://github.com/Biological-and-Precision-Psychiatry/DEXA-PSYCH"
+identifiers:
+  - description: "Concept DOI for pre- and post- DBL versions of the TLF-book"
+    type: doi
+    value: 10.5281/zenodo.23341773
+cff-version: 1.2.0

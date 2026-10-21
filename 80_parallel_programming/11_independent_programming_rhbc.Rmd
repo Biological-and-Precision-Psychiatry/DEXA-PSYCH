@@ -1,0 +1,395 @@
+---
+title: "Standalone Analysis of Primary Endpoint for parallel programming"
+author: "Rune Haubo B Christensen, senior statistician"
+date: "Last run: `r Sys.Date()`, last edit: 2026-08-25"
+params:
+  raw_trial_data_path: "L:/Auditdata/DEXA-PSYCH/15 - Databehandling/02 - REDCap raw data/DEXAPSYCH-Rchrdata_DATA_2026-06-11_1035.csv"
+  treatment_data_path: "02_data_derived/treatment_arm.rds"
+  output_path: "80_parallel_programming/pp_outputs/output_rhbc.rds"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+  pdf_document:
+    toc: true
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup0, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, collapse = TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+options(knitr.kable.NA = '')
+
+# wider output when knit'ing:
+if (isTRUE(getOption("knitr.in.progress")) && !knitr::is_latex_output()) {
+  options(width = 110)
+}
+```
+
+## Introduction
+
+This scripts is part of the parallel programming of the primary endpoint of the primary estimand in the DEXA-PSYCH trial.
+
+The primary estimand is a treatment policy estimand in which measuresments are included regardless of adherence to assigned treatment, i.e., regardless of on-treatment status. 
+
+The primary endpoint is change from baseline in MADRS~10~ score to the Day 7 visit.
+
+The primary analysis is mixed model for repeated measurements (MMRM) using the full analysis set (FAS) for post-baseline measurements with main effects of treatment and baseline outcome nested within visit using an unstructured visit-by-visit within-subjects residual variance-covariance matrix. Denominator degrees of freedom for _t_ statistics are calculated using Satterthwaite's method. The model is fitted including data on all previous visits but not on future visits. For further details, see the statistical analysis plan. 
+
+The script reads the raw data exported from REDCap and a separate file with the treatment allocation. Before data base lock (DBL) a fake and artificially generated treatment assignment is used - after DBL this is substituted with the true treatment assignment.
+
+The script uses a minimal set of R-packages (`data.table` for data handling and `mmrm` for fitting the mixed model for repeated measures). 
+
+A parallel script developed independently by another statistician will perform the same analysis and the equality of the results will be compared in an automatic and structured manner in a separate script.
+
+## Packages
+
+```{r}
+library(data.table)
+library(mmrm)
+```
+
+## Read `csv` file
+
+```{r}
+csv_path <- params$raw_trial_data_path 
+if(!file.exists(csv_path)) stop("Cannot locate file: '", csv_path, "'")
+d0 <- fread(file=csv_path, na.strings = c("", "NA", "NASK", "ASKU", "APN"))
+```
+
+
+## Format data 
+
+### Extract variables from raw data
+
+```{r}
+nm <- names(d0)
+keep <- c("rec_id", "rand_id", "besoeg_dato", "forsoegsmedicin_startdato",
+          "madrs10_total_dag0", "madrs_total_dag4", "madrs10_total_dag7",
+          "madrs_total_dag14", "madrs10_total_dag28")
+stopifnot(all(keep %in% nm))
+d1 <- d0[, .SD, .SDcols = keep]
+setnames(d1, "rec_id", "ID")
+d1 |> head(2)
+```
+
+### Derive Day~0~ - `d_day0` - and exlude data on non-randomized subjects
+
+Day~0~ is defined as the date just prior to date of trial medication initiation. The date of trial medication initiation is available in the variable `forsoegsmedicin_startdato`.
+
+All randomized subjects - and only randomized subjects - have been assigned a `rand_id`. Further, all randomized subjects - and only randomized subjects - have a value for `forsoegsmedicin_startdato`.
+
+The following code extracts `d_day0` for all randomized subjects:
+```{r}
+did <- d1[!is.na(rand_id), .(ID, rand_id, forsoegsmedicin_startdato)]
+stopifnot(did[, uniqueN(ID) == .N],
+          did[, uniqueN(rand_id) == .N],
+          did[, sum(is.na(ID)) == 0],
+          did[, sum(is.na(rand_id)) == 0],
+          did[, sum(is.na(forsoegsmedicin_startdato)) == 0])
+did[, d_day0 := forsoegsmedicin_startdato - 1]
+did  |> print(topn = 2)
+```
+
+Keep data on randomized subjects and add `day0` variable:
+```{r}
+d2 <- merge(d1[ID %in% did$ID], 
+            did[, .(ID, d_day0)],
+            by = "ID", all.x = TRUE, sort = FALSE)
+```
+
+Extract day0 data. Subjects may have more than one day0 score. We chose the score from the date that is closest to but no later than `d_day0`:
+```{r}
+day0 <- d2[!is.na(madrs10_total_dag0), 
+           .(ID, nvisit = 0, d_day0, dato = besoeg_dato, 
+             madrs = madrs10_total_dag0)]
+day0 <- day0[dato <= d_day0]
+day0[, dato_diff := as.numeric(d_day0 - dato)]
+
+# Subjects with day0-data not recorded on d_day0:
+idvec <- day0[, .N, ID][N > 1, ID]
+day0[dato_diff != 0 | ID %in% idvec]
+
+# Choose the `dato` closest to d_day0:
+setorder(day0, ID, dato_diff)
+day0 <- day0[, .SD[1], by = ID]
+
+stopifnot(day0[, uniqueN(ID) == .N], 
+          day0[, sum(is.na(dato)) == 0])
+```
+
+
+### Extract MADRS~10~ scores on days 4, 7, 14, and 28
+
+For the MMRM analysis we only need data until day 7, but we need to extract data from visits 14 and 28 too in order to determine FAS (in theory at least). This is because FAS is defined as "all randomized subjects with at least one post-baseline measurement of the outcome", and therefore subjects may (however unlikely) present with their first post-baseline measurement of MADRS~10~ on day 14 or day 28 visits.
+
+We only keep observations which are obtained within the visit windows. For all post-baseline visits the windows are (as defined in the SAP):
+
+- Day 4: $\pm 2$ days
+- Day 7: $\pm 2$ days
+- Day 14: $\pm 2$ days
+- Day 28: $\pm 4$ days
+
+We only extract data from the relevant `total` variables. We therefore assume that the MADRS~10~ total scores are all validly calculated from the individual items throughout the trial.
+
+The following code extracts observations of MADRS~10~ within visit windows for post-baseline visits 4, 7, 14, and 28: 
+```{r}
+d2_1 <- rbind(d2[!is.na(madrs_total_dag4),     # Day 4
+                 .(ID, nvisit = 4, d_day0, 
+                   dato = besoeg_dato, madrs = madrs_total_dag4)],
+              d2[!is.na(madrs10_total_dag7),   # Day 7
+                 .(ID, nvisit = 7, d_day0, 
+                   dato = besoeg_dato, madrs = madrs10_total_dag7)],
+              d2[!is.na(madrs_total_dag14),    # Day 14
+                 .(ID, nvisit = 14, d_day0, 
+                   dato = besoeg_dato, madrs = madrs_total_dag14)],
+              d2[!is.na(madrs10_total_dag28),  # Day 28
+                 .(ID, nvisit = 28, d_day0, 
+                   dato = besoeg_dato, madrs = madrs10_total_dag28)])
+
+## Add visit windows:
+d2_1[, d_target := d_day0 + nvisit]
+d2_1[, d_lwr := d_target - fifelse(nvisit < 28, 2, 4)]
+d2_1[, d_upr := d_target + fifelse(nvisit < 28, 2, 4)]
+
+## Exclude observations outside visit windows:
+d2_2 <- d2_1[d_lwr <= dato & dato <= d_upr]
+
+## Check that there is exactly one obs per ID at each visit and no NA dates:
+tab_check <- d2_2[, .(one_obs_per_id = uniqueN(ID) == .N), nvisit]
+stopifnot(tab_check[, all(one_obs_per_id)],
+          d2_2[, sum(is.na(dato)) == 0])
+```
+
+Merge baseline and post-baseline data:
+```{r}
+d3 <- rbind(day0[, .(ID, nvisit, madrs)],
+            d2_2[, .(ID, nvisit, madrs)])
+```
+
+Ensure that data is organized with exactly 1 row per combination of subject and visit. That is, in _long format_ and with 5 observations per subject for visits 0, 4, 7, 14, and 28:
+```{r}
+all_id_vis <- did[, .(nvisit = c(0, 4, 7, 14, 28)), ID]
+d4 <- merge(all_id_vis, d3, by = c("ID", "nvisit"), all.x = TRUE, sort = FALSE)
+
+# Expect 5 obs per subject:
+stopifnot(d4[, .N] == 5 * d4[, uniqueN(ID)])
+d4 |> print(topn = 2)
+```
+
+### Derive the Full Analysis Set (FAS)
+
+Subjects in FAS have at least one non-`NA` post-baseline measurement of MADRS~10~:
+```{r}
+dfas <- d4[nvisit > 0, .(c_FAS = fifelse(sum(!is.na(madrs)) > 0, "yes", "no")), ID]
+```
+
+Include only subjects in FAS:
+```{r}
+d5 <- d4[ID %in% dfas[c_FAS == "yes", ID]]
+d5 |> print(topn = 2)
+```
+
+
+### Read and add treatment variable
+
+We read the treatment variable from disk. Before DBL (data base lock) this will be a fake (artificially generated) treatment variable - after DBL it will be the true, actual treatment assignment.
+
+Read and add treatment variable:
+```{r}
+FILE_trt <- params$treatment_data_path
+stopifnot(file.exists(FILE_trt))
+dtrt <- readRDS(FILE_trt)
+stopifnot("trt" %in% names(dtrt),
+          is.factor(dtrt$trt))
+
+# Identify treatment levels and order them as (Placebo, Dexa):
+trt_levs <- dtrt[, levels(trt)]
+ref_trt_lev <- trt_levs[grep("[Pp]lacebo", trt_levs)]
+dexa_trt_lev  <- trt_levs[grep("[Dd]exa", trt_levs)]
+trt_levs <- c(ref_trt_lev, dexa_trt_lev)
+dtrt[, trt := relevel(trt, ref_trt_lev)]
+
+# Add treatment variable (trt) to data:
+d6 <- merge(d5, dtrt, by = "ID", all.x = TRUE)
+stopifnot(d6[, sum(is.na(trt)) == 0])
+```
+
+
+### Derive auxilliary variables
+
+Make change-from-baseline variable:
+```{r}
+d6[, value0 := madrs[nvisit == 0], ID]
+d6[, chgbl := madrs - value0]
+```
+
+Make factor visit and character ID variables:
+```{r}
+d6[, f_visit := factor(nvisit)]
+d6[, c_ID := as.character(ID)]
+```
+
+
+## Fit MMRM model
+
+Extract data for post-baseline visits:
+```{r}
+visits <- c(4, 7)
+stopifnot(all(visits %in% d6[, unique(nvisit)]))
+dvis <- d6[nvisit %in% visits] |> droplevels()
+```
+
+Fit MMRM model:
+```{r}
+fm <- mmrm(chgbl ~ (value0 + trt) * f_visit + us(f_visit | c_ID), data = dvis)
+summary(fm)
+```
+
+
+## Extract estimates and format results table
+
+Formatting functions:
+```{r}
+do_format <- function (x, digits = 2) {
+  stopifnot(is.numeric(x), length(x) > 0, is.numeric(digits), 
+            length(digits) == 1L)
+  trimws(format(round(x, digits), nsmall = digits, scientific = FALSE))
+}
+
+format_estci <- function (est, lwr, upr, digits = 2) {
+  paste0(do_format(est, digits), " (", do_format(lwr, digits), "; ",
+         do_format(upr, digits), ")")
+}
+
+format_pval2 <- function (p, digits = 3) {
+  trimws(format.pval(round(p, digits), digits = digits, eps = 10^(-digits), 
+                     scientific = FALSE, nsmall = digits))
+}
+```
+
+
+### Compute `FAS`, `N` and `Miss`
+
+Compute `FAS`, `N` (number of subjects contributing to analysis), and `Miss` (Number of subjects with missing values):
+```{r}
+tab_fas <- d6[, .(FAS = uniqueN(ID)), keyby=trt]
+tab_N <- dvis[, .(N = .N,
+                  Miss = sum(is.na(chgbl))), keyby=.(nvisit, trt)]
+tab_N <- merge(tab_N, tab_fas, by="trt", all=TRUE, sort = FALSE)
+setorder(tab_N, nvisit)
+setnames(tab_N, "trt", "Treatment")
+tab_N
+```
+
+
+### Compute estimated means and effect
+
+Make contrasts for the estimated means:
+```{r}
+# Extract from data:
+m_value0 <- d6[nvisit == 0, mean(value0, na.rm =TRUE)]
+
+# Contrasts for estimated means to day 4 and 7:
+ndata <- expand.grid(value0  = m_value0, 
+                     f_visit = levels(dvis$f_visit),
+                     trt     = trt_levs)
+Xnew <- model.matrix(~ 1 + (value0 + trt) * f_visit, data = ndata)
+
+# Contrasts to day 7:
+X7 <- Xnew[Xnew[, "f_visit7"] == 1, ]
+rownames(X7) <- trt_levs
+stopifnot(all(colnames(X7) == names(coef(fm))))
+X7
+```
+
+Compute estimated means and effect:
+```{r}
+# Estimated mean table:
+dem <-  rbind(
+  df_1d(fm, X7[1, ]) |> as.data.table(),
+  df_1d(fm, X7[2, ]) |> as.data.table())
+dem <- cbind(Treatment = factor(trt_levs, levels = trt_levs), dem)
+setnames(dem, c("est", "se"), c("emmean", "em_se"))
+dem[, q := qt(0.975, df = df)]
+dem[, em_lwr := emmean - q * em_se]
+dem[, em_upr := emmean + q * em_se]
+dem[, "Est. Mean (95% CI)" := format_estci(emmean, em_lwr, em_upr, digits = 1)]
+dem
+
+# Effect table:
+def <- df_1d(fm, X7[2, ] - X7[1, ]) |> as.data.table()
+def <- cbind(Treatment = factor(trt_levs[2], levels = trt_levs), def)
+setnames(def, c("est", "se"), c("effect", "eff_se"))
+def[, q := qt(0.975, df = df)]
+def[, eff_lwr := effect - q * eff_se]
+def[, eff_upr := effect + q * eff_se]
+def[, "Effect (95% CI)" := format_estci(effect, eff_lwr, eff_upr, digits = 2)]
+def[, "p-value" := format_pval2(p_val)]
+def
+```
+
+Merge results into table:
+```{r}
+dem <- merge(tab_N[nvisit == 7], dem, by = "Treatment")
+dem[, Visit := paste("Day", nvisit)]
+res <- merge(dem[, .(Treatment, Visit, FAS, N, Miss, emmean, em_se, em_lwr, em_upr, 
+                     `Est. Mean (95% CI)`)], 
+             def[, .(Treatment, effect, eff_se, eff_lwr, eff_upr, 
+                     `Effect (95% CI)`, p_val, `p-value`)],
+             by = "Treatment", all.x = TRUE, sort = FALSE)
+res
+```
+
+## Save resulting `data.table`
+
+```{r}
+saveRDS(res, file = params$output_path)
+```
+
+
+## Appendix
+
+### **R** session info
+
+```{r}
+sessionInfo()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

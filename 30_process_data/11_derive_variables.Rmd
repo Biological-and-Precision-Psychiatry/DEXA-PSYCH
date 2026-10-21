@@ -1,0 +1,1156 @@
+---
+title: "Derive variables for DEXA-PSYCH Data"
+author: "Rune Haubo B Christensen and Eva N. S. Wandall"
+date: "`r Sys.Date()`, original: 2025-08-18"
+params:
+  import_randomization_list: TRUE
+  rand_list_path: "L:/Auditdata/DEXA-PSYCH Randomiseringsliste/DEXA-PSYCH-Randomization-list-fake.xlsx"
+  rand_list_sheet_nm: "Pakkelisten"
+  fake_trt_rho: 0.2
+output: 
+  html_document:
+    self_contained: yes    
+    toc: yes
+    toc_float: yes
+  github_document:
+    toc: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup0, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+
+# wider output when knit'ing:
+if (isTRUE(getOption("knitr.in.progress")) && !knitr::is_latex_output()) {
+  options(width = 110)
+}
+```
+
+## Introduction
+
+This file derives variables and prepares data for analyses.
+
+One of the key variables is the treatment assignment. This variable is either generated as a fake treatment variable (used for code development prior to unblinding) or based on an imported randomization list which is only made available after the trial is unblinded. This process is controlled by the following parameters:
+```{r}
+str(params)
+```
+
+
+
+```{r setup, results='hide', message=FALSE}
+## load packages:
+library(data.table)
+library(lubridate)
+library(CRP)
+
+## Load functions:
+source("20_functions/source_dir.R")
+source_dir("20_functions")
+```
+
+
+## Read data 
+
+Read data file produced by compiling `01_prepare_data.Rmd`
+```{r read_data}
+lst <- readRDS("02_data_derived/data_by_category.rds")
+d0 <- rbindlist(lst, fill=TRUE)
+```
+
+Here `lst` contain `r length(lst)` sections with a number of rows shown in the following table:
+```{r}
+x <- sapply(lst, nrow)
+data.table(section = names(x),
+           number_of_rows = x) |> totpct()
+```
+
+`d0` is a single dataset including data from all sections.
+
+
+## Derive data for all subject IDs
+
+Get data on all possible subject IDs and optional randomization IDs:
+```{r}
+did <- unique(d0[, .(ID, rand_id)])
+```
+
+All screened subjects get an `ID` but only randomized subject get a randomization id; `rand_id`. 
+
+Check that there are no duplicated IDs and no duplicated `rand_id`s. This confirms that the mapping between `ID` and `rand_id` is unique:
+```{r}
+stopifnot(
+  did[, anyDuplicated(ID)] == 0,
+  did[!is.na(rand_id), anyDuplicated(rand_id)] == 0)
+```
+
+Dataset of all subjects:
+```{r}
+setorder(did, rand_id, ID)
+did
+```
+
+The total number of randomized subjects in the database is 
+`r did[, sum(!is.na(rand_id))]`.
+
+Save subject dataset to file:
+```{r}
+saveRDS(did, file = "02_data_derived/all_subject_ids.rds")
+```
+
+
+## Derive day0:
+
+Each subject may have data recorded at one or more day0 visits, but randomized subjects will have only one day0 visit at which they are randomized. Let $v_0$ denote day0 visits and let $v_{0r}$ denote the day0 visit at which a subject is randomized.
+
+The visit $v_{0r}$ is identified for each subject as the day0 visit with the highest value of `rep_inst` (denoted `repeat_instance` in REDCap.)
+
+We denote the date of the day0 visit at which randomization occurs by $D(v_{0r})$.
+
+The date at which trial product is started, that is day-zero for each subject is usually the day following $D(v_{0r})$ (but not always) and is formally defined as follows: $D(\mathrm{day}_0)$ is the value of `forsoegsmedicin_startdato - 1` where `forsoegsmedicin_startdato` is taken at day0 visit at which the subject is randomized ($v_{0r}$).
+
+Note that some subjects may have day0-data from more than one day0 visit. For example one subject has BACS data recorded at a date prior to that subject's  $D(v_{0r})$. For each variable and part we can extract the relevant observation by choosing the observation with the highest value of `rep_inst`.
+
+Compute $D(\mathrm{day}_0)$ (variable `d_day0`) for all randomized subjects:
+```{r day0_data}
+day0 <- d0[c_visit == "day0" & 
+             variable %in% c("forsoegsmedicin_startdato"),
+           .(ID, date, d_day0 = d_value - 1, rep_inst, rand_id)]
+
+day0[, max_rep_inst := max(rep_inst), ID]
+day0 <- day0[!is.na(rand_id) & max_rep_inst == rep_inst]
+# day0[d_day0 != date] # It is the case for 1 ID that d_day0 != date
+
+# Expect 1 row per ID and all IDs being randomized IDs:
+stopifnot(day0[, uniqueN(ID) == .N & uniqueN(rand_id) ==.N])
+day0 <- day0[, .(ID, rand_id, d_day0)]
+day0[]
+```
+
+Check that there is a `d_day0` for all randomized subjects:
+```{r}
+stopifnot(
+  setequal(day0[, rand_id], did[!is.na(rand_id), rand_id]),
+  setequal(day0[, ID], did[!is.na(rand_id), ID]))
+```
+
+Save day 0 data to file:
+```{r}
+saveRDS(day0, file = "02_data_derived/day0_all_subjects.rds")
+```
+
+Add day0 to full data and compute no. days from day0 (`n_days_from_0`):
+```{r}
+d1 <- merge(d0, day0, by=c("ID", "rand_id"), all.x=TRUE, sort = FALSE)
+d1[, n_days_from_0 := as.numeric(date - d_day0)]
+```
+
+
+## Derive on-treatment flag
+
+On any given date a subject is considered "on treatment" if the subject has taken the trial medication on that day or on the previous day.
+
+Note that the on-treatment flag might differ between outcomes within the same visit, if, for example, the visit was conducted across multiple dates (for example a day 7 visit conducted first by phone and then completed on a later date face-to-face).
+
+
+### Compute on-treatment flag from compliance data
+
+Get data on compliance:
+```{r compute_on_treatment, results='hide'}
+tmp <- d1[variable == "compliance"]
+```
+
+Compute dates-on-treatment for subjects with full compliance with trial product, ie, 8 dates per subject:
+```{r results='hide'}
+tmp1 <- tmp[part == "janej" & c_value == "Ja", .(ID, d_day0)]
+tmp1 <- tmp1[, .(add = 1:8), .(ID, d_day0)]
+tmp1[, d_on_treat := d_day0 + add]
+tmp1[, i_on_treat := 1]
+tmp1[, d_prem_trt_disc := as.IDate(NA)]
+
+# Check that there are 8 rows in tmp1 for each subject:
+stopifnot(tmp1[, uniqueN(ID) * 8 == .N])
+```
+
+Compute dates-on-treatment for subjects with partial compliance with trial product:
+
+- Here subjects are considered 'on-treatment' if medicine is taken on the day or the day before the assessment is made.
+
+```{r results='hide'}
+tmp2 <- tmp[part != "janej", .(ID, part, d_day0, c_value)]
+setorder(tmp2)
+tmp2[, add := as.numeric(gsub("dag", "", part))]
+
+## Check that subjects have compliance data on all 7 days:
+stopifnot(all(
+  sapply(tmp2[, unique(ID)], function(id) 
+    tmp2[ID == id, setequal(add, 1:7)]) 
+  ))
+
+## Add the 8'th day for each subject:
+tmp2b <- tmp2[, .SD[1], by=.(ID, d_day0)]
+tmp2b[, `:=`(c_value = "day8", 
+             part    = "day8",
+             add     = 8)]
+tmp2c <- rbind(tmp2, tmp2b)[order(ID, add)]
+
+# Set to 'treated' each day if 'c_value == "Indtaget"':
+tmp2c[, treated := fifelse(c_value == "Indtaget", 1.0, 0.0)]
+
+# Set 'treated_previous_day':
+tmp2c[, treated_previous_day := c(1, treated[-length(treated)]), ID]
+
+# Set i_on_treat to 1 of treated on the day or the day before and 0 otherwise:
+tmp2c[, i_on_treat := fifelse(treated == 1 | treated_previous_day == 1, 1.0, 0.0)]
+
+# Compute dates for i_on_treat indicator:
+tmp2c[, d_on_treat := d_day0 + add]
+
+# Compute date of premature treatment discontinuation:
+tmp3 <- tmp2c[c_value != "day8"]
+# Get last sequence taking or not taking treatment:
+tmp3[, grp := rleid(c_value), .(ID)]
+tmp3[, max_grp := max(grp), ID]
+# Get first date a subject stopped taking treatment for good:
+tmp3 <- tmp3[grp == max_grp & c_value == "Ikke indtaget"]
+setorder(tmp3, ID, d_on_treat)
+tmp3 <- tmp3[, .SD[1], ID]
+# Subjects with premature treatment discontinuation:
+tmp3[, .(ID, d_prem_trt_disc = d_on_treat)]
+# Here 'd_prem_trt_disc' is the first date treatment is *not* taken for subjects with
+# premature treatment discontinuation and NA otherwise
+
+# Add date of premature treatment discontinuation to data:
+tmp2d <- merge(tmp2c, tmp3[, .(ID, d_on_treat, d_prem_trt_disc = d_on_treat)], 
+               by = c("ID", "d_on_treat"), all.x = TRUE)
+# Check that there are 8 rows in tmp2c for each subject:
+stopifnot(tmp2d[, uniqueN(ID) * 8 == .N])
+```
+
+Combine data on treatment compliance for subjects with full or partial compliance:
+```{r results='hide'}
+dontrt <- rbind(tmp1, tmp2d[, .(ID, d_day0, add, d_on_treat, i_on_treat,
+                                d_prem_trt_disc)])
+```
+
+Randomized subjects without treatment compliance information:
+```{r}
+IDs_wo_compliance <- setDiff(dontrt[, unique(ID)], did[!is.na(rand_id), ID])
+IDs_wo_compliance
+```
+
+Construct treatment compliance data for subjects with no information assuming that they are not on treatment: 
+```{r}
+if(length(IDs_wo_compliance)) {
+  tmp4 <- day0[!ID %in% dontrt[, unique(ID)], .(add = 1:8), by= .(ID, d_day0)]
+  tmp4[, `:=`(d_on_treat   = d_day0 + add,
+              i_on_treat   = 0, 
+              d_prem_trt_disc = NA_Date_)]
+  dontrt <- rbind(dontrt, tmp4)
+}
+dontrt[, add := NULL]
+```
+
+Check that we have treatment compliance data on all randomized subjects:
+```{r}
+stopifnot(
+  setequal(dontrt[, unique(ID)], did[!is.na(rand_id), ID])
+)
+```
+
+Save treatment compliance data to file:
+```{r}
+saveRDS(dontrt, file = "02_data_derived/treatment_compliance_all_rand_id.rds")
+dontrt
+```
+
+
+### Check and tabulate on-treatment flag in full data
+
+```{r add_on_treatment}
+d2 <- merge(d1, dontrt[, .(ID, d_on_treat, i_on_treat)], 
+            by.x=c("ID", "date"), by.y=c("ID", "d_on_treat"),
+            all.x=TRUE, sort = FALSE)
+
+## Observations only have an on-treatment status on visits 
+## c("day2", "day4", "day7", "day8")
+## If on any of those visits a subject is not on treatment the subjects is off 
+## treatment (no NAs), so we set NAs to 0:
+d2[c_visit %in% c("day2", "day4", "day7", "day8") & is.na(i_on_treat), i_on_treat := 0]
+
+## Check that all observations on the following visits are NA:
+stopifnot(d2[c_visit %in% c("screen", "day0", "day14", "day28", "month6"),
+             all(is.na(i_on_treat))])
+```
+
+Ensure that the `i_on_treat` variable is set to `0` or `1` for visits `day2`, `day4`, `day7`, and `day8` and to `NA` for all other visits (`day0` and all visits after `day8`):
+```{r}
+stopifnot(
+  d2[c_visit %in% c("screen", "day0", "day14", "day28", "month6"),
+     all(is.na(i_on_treat))],
+  d2[c_visit %in% c("day2", "day4", "day7", "day8"), !any(is.na(i_on_treat))])
+```
+
+Observations only have a non-`NA` on-treatment status (`i_on_treat` is `0` or `1`) on visits `c("day2", "day4", "day7", "day8")`. If on any of those visits a subject is not on treatment the subjects is off treatment (no `NA`s).
+```{r}
+d2[c_visit %in% c("day2", "day4", "day7", "day8"), .N, keyby=.(c_visit, i_on_treat)]
+```
+
+NOTE: observations on 'event' and 'deviation' visits can be on treatment (`i_on_treat` is `1`) or off treatment or (`i_on_treat` is `0` or `NA`)
+```{r}
+d2[c_visit %in% c("events", "deviations"), .N, keyby=.(c_visit, i_on_treat)]
+```
+
+
+## Derive SAS population flag
+
+The Safety Analysis Set (SAS) is defined as all subjects who took at least one dose of trial product. The SAS population is therefore defined on a trial level unlike the Full Analysis Set (FAS) which is defined per outcome variable. We therefore compute a SAS population flag here but compute FAS flags later in the analysis pipeline.
+
+We assume that only randomized subjects (subjects with a `rand_id`) had the possibility to take any trial product. We therefore evaluate SAS as the subjects among all randomized subjects who took at least one dose of trial product.
+
+Compute indicator of Safety Analysis Set (SAS):
+```{r}
+dsas <- dontrt[, .(c_SAS = fifelse(sum(i_on_treat) > 0, "yes", "no")), by = ID]
+dsas[, .N, c_SAS]
+```
+
+Save SAS dataset to file:
+```{r}
+saveRDS(dsas, file = "02_data_derived/SAS_population.rds")
+```
+
+
+## Make fake treatment variable
+
+A fake treatment variable is computed regardless. If `params$import_randomization_list` is `TRUE` the real randomization list is imported and the fake treatment variable is overwritten. 
+
+### Compute change-from-baseline MADRS~10~ value
+
+First compute the day0-value:
+```{r}
+rate_data <- d0[variable %in% "madrs" & part == "total10" & !is.na(rand_id),
+                .(ID, rand_id, c_visit, variable, part, value, rep_inst, date)]
+rate_data0 <- rate_data[c_visit == "day0" & !is.na(value)]
+setnames(rate_data0, "value", "value0")
+setorder(rate_data0, ID, variable, part, -rep_inst)
+rate_data0 <- rate_data0[, .SD[1], by=.(ID)]
+
+## Require at most one day0-value for each ID x variable x part:
+stopifnot(rate_data0[, .N, .(ID)][, all(N == 1)])
+```
+
+Add day0 value to data and compute change-from baseline value
+```{r mk_change_from_baseline_data}
+rate_data2 <- merge(rate_data[, .(ID, variable, c_visit, part, value)], 
+                    rate_data0[, .(ID, value0)], 
+                    by=c("ID"), all.x = TRUE, sort = FALSE)
+stopifnot(rate_data2[, .N] == rate_data[, .N])
+rate_data2[, chgbl := value - value0]
+```
+
+Get last observed `chgbl` value on the day 7 and the day 28 visit:
+```{r}
+# Last observed chgbl value on the day 7 visit
+dd7 <- rate_data2[c_visit %in% c("day0", "day4", "day7"), .(ID, c_visit, chgbl)]
+setorder(dd7, ID, -c_visit)
+dd7 <- dd7[, .SD[1], ID]
+setnames(dd7, c("chgbl", "c_visit"), c("chgbl7", "c_visit7"))
+
+# Last observed chgbl value on the day 28 visit
+dd28 <- rate_data2[c_visit %in% c("day0", "day4", "day7", "day14", "day28"), .(ID, c_visit, chgbl)]
+dd28[, n_day := as.numeric(gsub("day", "", c_visit))]
+setorder(dd28, ID, -n_day)
+dd28 <- dd28[, .SD[1], ID]
+setnames(dd28, c("chgbl", "c_visit"), c("chgbl28", "c_visit28"))
+
+dd <- merge(dd7, dd28[, .(ID, c_visit28, chgbl28)])
+```
+
+
+### Fake treatment allocation via latent correlation
+
+We now generate a fake treatment variable in which allocation is correlated with 
+the last observed change from baseline value for MADRS~10~ on the day 7 visit. 
+
+We construct a latent score $s$ as a weighted mixture of the standardized outcome 
+($z$) and independent noise ($\varepsilon$)
+
+$$ s = \rho \times z + \sqrt{1-\rho^2} \times \varepsilon$$
+Since $z$ and $\varepsilon$ both have variance 1 and are independent, $s$ also has 
+variance 1 and $\rho$ is the correlation between $z$ and $s$. This is analogous to the relation between a standard bivariate normal distribution with correlation $\rho$ and the corresponding marginal distributions. The 50% lowest $s$ scores are assigned to `Dexameth_fake`. 
+
+Thus,
+
+- $\rho = 1$ deterministically assigns all the lowest change from baseline values to `Dexameth_fake`.
+- $\rho = 0$ assigns treatment independently of change from baseline values (null effect).
+- $\rho = -1$ deterministically assigns all the highest change from baseline values to `Dexameth_fake`.
+
+Value of $\rho$ in this evaluation:
+```{r}
+(rho <- params$fake_trt_rho)
+```
+
+Compute fake treatment variable:
+```{r}
+# Standardized change from baseline score (day 7)
+dd[, z := scale(chgbl7)]
+
+# Independent standard-normal noise
+set.seed(290980)
+dd[, eps := rnorm(.N)]
+
+# Correlation parameter between outcome and the latent allocation score
+stopifnot(
+  "rho should be between -1 and 1, as it is interpreted as a correlation" = 
+    rho >= -1 & rho <= 1
+)
+
+# Latent score determining treatment allocation
+dd[, score := rho * z + sqrt(1 - rho^2) * eps]
+
+# Treatment allocation based on s: The 50% lowest s scores are assigned Dexameth_fake.
+# ties.method = "first" guarantees an exact count in each arm regardless of ties.
+n_dexa <- round(nrow(dd) * 0.5)
+dd[, trt := ifelse(rank(score, ties.method = "first") <= n_dexa, 
+                   "Dexameth_fake", "Placebo_fake")]
+
+# Convert to factor
+dd[, trt := factor(trt)]
+
+# Check that trt is a factor with set levels in right order:
+stopifnot(dd[, all(levels(trt) == c("Dexameth_fake", "Placebo_fake"))])
+```
+
+Number of subjects and mean change from baseline (on day 7 and day 28) by treatment arm:
+```{r}
+dd[, .("N" = .N, mean_chgbl7 = mean(chgbl7), mean_chgbl28 = mean(chgbl28)), keyby=trt]
+```
+
+Save fake treatment arm to disk:
+```{r}
+path_to_dtrt <- "02_data_derived/treatment_arm.rds"
+dtrt <- dd[, .(ID, trt)]
+if(!params$import_randomization_list) saveRDS(dtrt, file = path_to_dtrt)
+dtrt[]
+```
+
+
+## Import randomization list from disk
+
+If `params$import_randomization_list` is `TRUE` and a valid Excel-file with a randomization list exists at `params$rand_list_path`, we import the randomization list and over-write the fake treatment assignment generated above and saved to `path_to_dtrt`. 
+
+```{r import_randomization_list}
+if(params$import_randomization_list) {
+  
+  # Check that the xlsx-file exists with a valid sheet:
+  if(!file.exists(params$rand_list_path)) 
+    stop("Randomization list at 'params$rand_list_path' not found.\n", 
+         "  Update the path or proceed with a fake treatment assignment\n",
+         "  by setting 'params$import_randomization_list' to FALSE.")
+  sheet_nms <- readxl::excel_sheets(params$rand_list_path)
+  if(!params$rand_list_sheet_nm %in% sheet_nms) 
+    stop("'params$rand_list_sheet_nm' not among observed sheet names: ", 
+         paste(sheet_nms, collapse = ", "))
+  
+  # Read the randomization list:
+  drnd <- quick_read_excel(params$rand_list_path, sheet = params$rand_list_sheet_nm)
+  setDT(drnd)
+  
+  # Get name of randomization id variable:
+  idvar <- getgrep("[Rr]and", names(drnd))
+  stopifnot(length(idvar) == 1L)
+  
+  # Get name of Treatment variable:
+  trtvar <- getgrep("[Bb]ehandl", names(drnd))
+  stopifnot(length(trtvar) == 1L)
+
+  # Assign 'rand_id' variable:
+  drnd[, rand_id := get(idvar)]
+  
+  # Assign 'trt' variable:
+  drnd[grepl("[Pp]lacebo", get(trtvar)), trt := "Placebo"]
+  drnd[grepl("[Dd]exa", get(trtvar)), trt := "Dexamethasone"]
+  stopifnot(drnd[, sum(is.na(trt)) == 0])
+  
+  # Convert to factor and ensure the right reference level:
+  drnd[, trt := relevel(as.factor(trt), "Dexamethasone")]
+
+  # Add 'ID' variable to data:
+  drnd2 <- merge(did[!is.na(rand_id)], drnd, by = "rand_id", all.y = TRUE)
+  
+  # Select 'ID' and 'trt' columns and OVERWRITE the 'dtrt' data.table:
+  dtrt <- drnd2[, .SD, .SDcols = c("ID", "trt")]
+  
+  # Check validity of file contents:
+  stopifnot(nrow(dtrt) == 300L,
+            sum(complete.cases(dtrt)) == 300L,
+            names(dtrt) == c("ID", "trt"))
+
+  # Write the 'dtrt' data.table to disk:  
+  saveRDS(dtrt, file = path_to_dtrt)
+}
+```
+
+Print file to show if treatment is real or fake:
+```{r}
+dtrt[]
+```
+
+
+## Define in-window "state" of observations
+
+Visits are recorded as being within visit windows or not (if and only if the 
+variable `in_window` is `1` a measurement is within the visit window at the visit 
+at which is was recorded.)
+
+Time is counted from the date before trial product is initiated, not the date of 
+the day0 visit, i.e., from $D(\mathrm{day}_0)$; not $D(v_{0r})$.
+
+Target dates for the visits including the allowed visit windows are as follows: 
+
+- day0 visit: $\leq 0$ days
+- day2 visit: $2\pm 2$ days
+- day4 visit: $4\pm 2$ days
+- day7 visit: $7\pm 2$ days
+- (day8 visit: $8\pm 2$ days)
+- day14 visit: $14\pm 2$ days
+- day28 visit: $28\pm 4$ days
+- month6 visit: $182\pm 28$ days
+
+The function `get_windows()`, classifies all observations according the window `state`: 
+
+- **In window:**     the observation was recorded  within the expected time window
+- **Out of window:** the observation was recorded outside the expected time window
+- **Late:**          the observation has not been recorded, and the window has already passed
+- **Now:**           the observation has not been recorded, but the window is currently open
+- **Future:**        the observation has not been recorded, and the window has not yet opened
+
+Note that different parts of a visit might be recorded on different dates, and 
+thus variables recorded at the same visit may be recorded at different dates and therefore the `state` of the variables may also differ.
+
+Functions that work in visit dates and windows are defined as follows (cf. file `20_functions/derive_data_fcts.R`):
+```{r window_functions, code=readLines("20_functions/derive_data_fcts.R")}
+```
+
+
+## Compute total scores
+
+```{r function_to_get_total_scores}
+#' Match items to total scores
+#'
+#' @param variable
+#'
+#' @returns a list of vectors. Each vector is the items to be added for 
+#' the computation of total scores
+#'
+#' @examples
+#' 
+#' # There are two total scores for HAM-D; the 6 and 17-item scores:
+#' match_total_scores("hamd")
+#' 
+match_total_scores <- function(
+    variable = c("madrs", "hamd", "mdi", "hama", "ymrs", "saps", "gti", 
+                 "cssrs", "facitf", "eq5d5l")) {
+  variable == match.arg(variable)
+  mk_std_score <- function(n = 10) {
+    setNames(list(as.character(1:n)), "total")
+  }
+  if(variable == "mdi")    return(mk_std_score(10))
+  if(variable == "hama")   return(mk_std_score(14))
+  if(variable == "ymrs")   return(mk_std_score(11))
+  if(variable == "saps")   return(mk_std_score(34))
+  if(variable == "gti")    return(mk_std_score(8))
+
+  if(variable == "madrs") 
+    res <- list("total10"   = as.character(1:10),
+                "total6"    = as.character(c(1:3, 7:9)))
+  if(variable == "hamd")
+    res <- list("total17"   = as.character(1:17),
+                "total6"    = as.character(c(1, 2, 7, 8, 10, 13)))
+  if(variable == "cssrs") 
+    res <- list("total2"    = as.character(1:2),
+                "ideation"  = as.character(1:5),
+                "intensity" = as.character(6:10))
+  if(variable == "facitf") 
+    res <- list("total"     = 
+                  c("hi7", "hi12", paste0("an", c(1:5, 7:8, 12, 14:16))))
+  if(variable == "eq5d5l")
+    res <- list("utility" = as.character(1:5))
+  
+  # Return:
+  res
+}
+
+
+#' All score variables
+#'
+#' @returns a vector of variables for which total scores are defined.
+#'
+#' @examples
+#' 
+#' all_score_variables()
+#' 
+all_score_variables <- function() 
+  c("madrs", "hamd", "mdi", "hama", "ymrs", 
+    "saps", "gti", "cssrs", "facitf", "eq5d5l")
+
+
+#' Add EQ-5D-5L penalty to value in data
+#' 
+#' Update the value column in data where `"variable" == "eq5d5l"` and 
+#' `"part" %in% as.character(1:5)`. Remaining rows are left unchanged.
+#' 
+#' Only used in `get_total_scores()`
+#'
+#' @param data a `data.table` with data on `"eq5d5l"`
+#'
+#' @returns the `data.table` with added columns `penalty` and `value_orig`. The 
+#' contents of `value` is set to `value_orig - penalty`.
+#'
+#' @examples
+#' 
+#' d0 <- get_derived_data()
+#' add_eq5d5l_penalty(d0)[variable == "eq5d5l"] |> head(2)
+#' 
+add_eq5d5l_penalty <- function(data) {
+  # Check arguments:
+  stopifnot(is.data.table(data) && nrow(data) > 0)
+  required_cols <- c("variable", "part", "value")
+  test_required(required_cols, names(data))
+  
+  # Get data on utility items:
+  items <- match_total_scores("eq5d5l")[[1]]  
+  .d1 <- data[variable == "eq5d5l" & part %in% items]
+  .d2 <- data[!(variable == "eq5d5l" & part %in% items)]
+  stopifnot("No eq5d5l-data on items 1-5" = nrow(.d1) > 0) 
+  
+
+  # Input data on penalties:
+  txt <- 
+"IT item desc lv level penalty  
+Item 1: Mobility, level 2	0.041
+Item 1: Mobility, level 3	0.054
+Item 1: Mobility, level 4	0.157
+Item 1: Mobility, level 5	0.220
+Item 2: Self-care, level 2	0.035
+Item 2: Self-care, level 3	0.050
+Item 2: Self-care, level 4	0.144
+Item 2: Self-care, level 5	0.209
+Item 3: Usual-activities, level 2	0.033
+Item 3: Usual-activities, level 3	0.040
+Item 3: Usual-activities, level 4	0.139
+Item 3: Usual-activities, level 5	0.174
+Item 4: Pain/discomfort, level 2	0.048
+Item 4: Pain/discomfort, level 3	0.094
+Item 4: Pain/discomfort, level 4	0.381
+Item 4: Pain/discomfort, level 5	0.537
+Item 5: Anxiety/depression, level 2	0.072
+Item 5: Anxiety/depression, level 3	0.191
+Item 5: Anxiety/depression, level 4	0.430
+Item 5: Anxiety/depression, level 5	0.618"
+
+  # Read and format penalties:
+  txt <- gsub("\\t", " ", txt)
+  ed_penalty <- fread(input = txt, sep = c(" "))
+  ed_penalty[, item := gsub(":", "", item)]
+  ed_penalty <- ed_penalty[, .(item, level, penalty)]
+  ed_penalty <- rbind(ed_penalty, 
+                      ed_penalty[, .(level = 1, penalty = 0), item])
+  setorder(ed_penalty, item, level)
+
+  # Add penalty to data:
+  res <- merge(.d1, ed_penalty, all.x = TRUE,
+               by.x = c("part", "value"), by.y = c("item", "level"))
+  res[, value_orig := value]
+  res[, value := -penalty]
+  
+  # Return:
+  rbind(res, .d2, fill = TRUE)[]
+}
+
+
+#' Compute total scores for a variable
+#' 
+#' For each unique combination of `ID` and `date` total scores are computed.
+#'
+#' @param data derived data, cf. `get_derived_data()`
+#' @param variable 
+#'
+#' @returns A `data.table` with the total scores in the `value` column. Other 
+#' computed columns include: 
+#' 
+#' - `specs` the items to be added up 
+#' - `items` the items found in data 
+#' - `n` the number items found in data
+#' - `part` the name of the total score variable (eg. `total10`)
+#' - `rm` if `items` != `specs`, `rm` is set to `1` (`0` otherwise) and `value` is set to `NA`
+#'
+#' @examples
+#' 
+#' d0 <- get_derived_data()
+#' get_total_scores(d0, variable = "gti")
+#' 
+get_total_scores <- function(
+    data,
+    variable = c("madrs", "hamd", "mdi", "hama", "ymrs", "saps", "gti", 
+                 "cssrs", "facitf", "eq5d5l")) {
+  # Check arguments:
+  Variable <-  match.arg(variable)
+  required_cols <- 
+    c("ID", "date", "part", "variable", "value", "c_visit", "rand_id")
+  test_required(required_cols, names(data))
+  .d <- data[variable == Variable, .SD, .SDcols = required_cols]
+  
+  # Add 'value' with penalty for eq5d5l:
+  if(Variable == "eq5d5l") .d <- add_eq5d5l_penalty(.d)
+
+  # Compute special parts 8 and 10 for MDI:
+  if(Variable == "mdi") {
+    .d8 <- .d[as.character(part) %in% as.character(c("8a", "8b")), 
+              .(part = "8",
+                value = max(value)),
+              by = .(ID, date, variable, c_visit, rand_id)] 
+    .d10 <- .d[as.character(part) %in% as.character(c("10a", "10b")), 
+               .(part = "10",
+                 value = max(value)),
+               by = .(ID, date, variable, c_visit, rand_id)] 
+    .d <- rbind(.d, .d8, .d10, fill = TRUE)
+  } 
+
+  # Compute derived scores:
+  score_list <- match_total_scores(Variable)
+  nms <- names(score_list)
+  res <- lapply(nms, function(nm) {
+    .d[as.character(part) %in% score_list[[nm]],
+       .(part  = nm, n = .N, 
+         items = paste(sort_by_number(part), collapse = ", "), 
+         specs = paste(sort_by_number(score_list[[nm]]), collapse = ", "),
+         value = sum(value)), by = .(ID, date, variable, c_visit, rand_id)]
+  }) |> rbindlist()
+  
+  # Add 'intensity = 0' for "cssrs" where total2 value is 0:
+  if(Variable == "cssrs") {
+    res[, rep := 1] # ensure we don't replicate entered data.
+    tmp <- res[part == "total2" & value == 0][
+      , `:=`(part  = "intensity",
+             value = 0,
+             rep   = 2)]
+    res <- rbind(res, tmp)
+    setorder(res, ID, date, part, rep)
+    res <- res[, .SD[1], by = .(ID, date, part, rep)]
+    res[, rep := NULL]
+  }
+  
+  # FACIT-F, 'score = 52 - total':
+  if(Variable == "facitf") res[part == "total", value := 52 - value]
+  
+  # Add 'scale' for "eq5d5l": 
+  if(Variable == "eq5d5l") {
+    res[part == "utility", value := value + 1] # utility baseline is '1'
+    add <- .d[part == "scale", 
+              .(part = "scale", n = .N, items = "scale", specs = "scale", 
+                value), by = .(ID, date, variable, c_visit, rand_id)]
+    res <- rbind(res, add)
+  }
+  
+  # Flag incomplete scores for removal:
+  res[, rm := fifelse(items != specs, 1.0, 0.0)]
+  if(Variable == "cssrs") {
+    res[part == "ideation", rm := 
+          fifelse(items == specs | items == "1, 2", 0.0, 1.0)]
+  }
+  res[rm == 1, value := NA]
+
+  # Add additional variables and return:
+  add_derived_data(res)
+}
+```
+
+### Compute total scores
+
+Compute total scores for all rating variables:
+```{r compute_total_scores}
+# Extract derived data:
+d0 <- get_derived_data()
+d01 <- d0[variable %in% all_score_variables()]
+
+# Compute/derive total scores for all variables:
+d1 <- lapply(all_score_variables(), function(var) 
+  get_total_scores(data = d01, variable = var)) |>
+  rbindlist(use.names = TRUE)
+```
+
+Number of values set to `NA` due to missing items:
+```{r}
+d1[rm == 1, .N, keyby = .(variable, part)] |> totpct(n_col = "N")
+```
+
+### Compare derived scores to REDCap total scores
+
+Get REDCap total scores:
+```{r}
+# Names of derived scores to 'total*' to match REDCap names:
+d11 <- d1[!variable %in% c("cssrs", "eq5d5l")]
+
+# Extract REDCap total scores:
+d02 <- d01[grepl("total", part), 
+           .(ID, date, variable, part, c_visit, value_rc = value, rand_id)]
+
+# Merge data derived total scores and REDCap total scores:
+d3 <- merge(d02, d11, 
+            by = c("ID", "date", "variable", "part", "c_visit", "rand_id"), 
+            all = TRUE) |> rm_na_cols()
+setorder(d3, ID, date, variable, part)
+```
+
+Summarize the number of values for randomized subjects that agree or disagree between REDCap and the computation in `get_total_scores()`:
+```{r}
+d3[, value_equal := isTRUE(all.equal(value, value_rc)), by = .I]
+d3[!is.na(rand_id), .(no_values = .N, 
+                      equal     = sum(value_equal),
+                      not_equal = sum(!value_equal)), 
+   by = .(variable, part)]
+```
+If both values are `NA` they are "equal" in this comparison.
+
+Check that all MADRS~10~ total scores reported by REDCap are equal to those computed by `get_total_scores()` a few lines above:
+```{r}
+not_agree <- d3[!is.na(rand_id) & variable == "madrs" & part == "total10" & 
+                      value_rc != value]
+if(nrow(not_agree) > 0) {
+  print(not_agree)
+  stop("REDCap MADRS10 total scores are not equal to computed MADRS10 total scores")
+}
+```
+
+Extract incompatible values, including those values which are `NA` from either REDCap or our computation:
+```{r}
+# Incompatible values:
+d4 <- rbind(d3[value != value_rc | is.na(value) | is.na(value_rc)],
+            d1[variable == "cssrs" & rm == 1], fill = TRUE)
+d4[!is.na(rand_id), .N, keyby = .(variable, part)] |> totpct(n_col = "N")
+```
+
+Save comparison of incompatibles to disk:
+```{r}
+d4l <- split(d4[!is.na(rand_id)], by = c("variable", "part"))
+path <- paste0("04_data_checks/", 
+               get_datetime_from_checksums(), "_total_score_diffs.xlsx")
+writexl::write_xlsx(d4l, path = path)
+```
+
+### Compute suicide thoughts variable for C-SSRS 
+
+Derived scores for C-SSRS:
+
+- "total2" is the sum of the first 2 items
+- "suicide_thoughts" is 1 if `total2 > 0`
+- "ideation" is the sum of the first 5 items 
+- "intention" is the sum of items 6 to 10
+
+Derived variables are computed for each observed combination of `ID` and `date`. 
+
+Only `suicide_thoughts` is not computed above, so we compute it here:
+```{r}
+dc1 <- d1[variable == "cssrs" & part == "total2" & rm < 1]
+dc1[, part := "suicide_thoughts"][, value := pmin(1, value)]
+d5 <- rbind(d1, dc1)
+```
+
+
+## Extract datasets for analyses
+
+The function to extract analysis data is defined as follows:
+```{r}
+#' Make analysis data
+#' 
+#' @details
+#' `value_var = "auto-detect"` picks for the first variable among
+#' `c("value", "c_value", "d_value")` in `data` which is not all `NA` for the 
+#' specified `variable` and `part`.
+#' 
+#' Note that elements of `value` and `chgbl` are *not* set to `NA` where 
+#' observations are out-of-window.
+#' 
+#' Missing baseline values (`value0`) are imputed by the mean of the non-missing
+#' entries of `value` at Day 0 for those variable+part where `value` is numeric.
+#' 
+#' At visits 0, 14 and 28 `c_on_treat` is `"NR"`. At visits between 0 and 14 (4 
+#' and 7) `c_on_treat` is `"yes"` or `"no"`.
+#'
+#' @param data        `data.table` with raw data including columns 
+#' `c("variable", "part", "ID", "rand_id", "c_visit", "value", "date")`
+#' @param variable    name of variable (character length 1)
+#' @param part        name of part (character length 1)
+#' @param value_var   `"auto-detect"` (default) or one of 
+#' `c("value", "c_value", "d_value")`
+#' @param dt_day0     `data.table` with `day0` information
+#'
+#' @returns A `data.table` with ready-to-analyze data.
+#'
+#' @examples
+#' # Get "example" data for MADRS10:
+#' lst <- readRDS("02_data_derived/data_by_category.rds")
+#' d <- lst$rate_data
+#' 
+#' # Get analysis data:
+#' mk_analysis_data(d) # default values for variable and part
+#' mk_analysis_data(data = d, variable = "madrs", part = "total10", set_dropout = TRUE)
+#' mk_analysis_data(data = d, variable = "madrs", part = "total6")
+#' mk_analysis_data(data = d, variable = "mdi", part = "total")
+#' mk_analysis_data(data = d, variable = "gti", part = "total")
+#' mk_analysis_data(data = d, variable = "bacs", part = "tol")
+#' d0 <- get_derived_data()
+#' mk_analysis_data(data = d0, variable = "sysblodtryk", part = "sysblodtryk")
+#' 
+# Parameters for debugging:
+# d0 <- get_derived_data()
+# data <- copy(d0)
+# variable <- "madrs"# "fosfatase"
+# part <- "total10"# "fosfatase"
+# dt_day0 = readRDS("02_data_derived/day0_all_subjects.rds")
+# dontrt  = readRDS("02_data_derived/treatment_compliance_all_rand_id.rds")
+# value_var   = "auto-detect"
+# .d[, value := CRP::comma2numeric(c_value)]
+# 
+mk_analysis_data <- function(
+    data, 
+    variable    = "madrs", 
+    part        = "total10", 
+    value_var   = "auto-detect",
+    dt_day0 = readRDS("02_data_derived/day0_all_subjects.rds"),
+    dontrt  = readRDS("02_data_derived/treatment_compliance_all_rand_id.rds")) { 
+  # Check arguments:
+  stopifnot(is.data.table(data),
+            "variable" %in% names(data),
+            "part" %in% names(data),
+            is.character(value_var) && length(value_var) == 1L,
+            is.character(variable) && length(variable) == 1L,
+            is.character(part) && length(part) == 1L)
+  required_cols <- 
+    c("variable", "part", "ID", "rand_id", "c_visit", "date")
+  test_required(required_cols, names(data), "data")
+  valid_value_var <- c("value", "c_value", "d_value")
+  actual_value_var <- get_in(valid_value_var, names(data))
+  if(!length(actual_value_var)) 
+    stop(sprintf("A value-column is required in 'data'. Valid options are: %s",
+                 paste(valid_value_var, collapse = ", ")))
+  all_vars <- data[, unique(variable)]
+  all_part <- data[, unique(part)]
+  stopifnot(variable %in% all_vars,
+            part %in% all_part)
+  Variable <- variable; Part <- part
+  .d <- copy(data)[, .SD, .SDcols = c(required_cols, actual_value_var)]
+  
+  # Observed data for randomized subjects on variable and part on valid visits:
+  allvisits <- c("day0", "day4", "day7", "day14", "day28", "month6")
+  .d <- .d[c_visit %in% allvisits & 
+             variable == Variable & part == Part & !is.na(rand_id)] 
+  
+  # Auto-detect value variable:
+  if(value_var == "auto-detect")
+    value_var <- sapply(actual_value_var, function(val) 
+      .d[, !all(is.na(get(val)))]) |> which() |> names()
+  # Check that a valid value-column exists in 'data':
+  if(!length(value_var)) 
+    stop(sprintf("value column(s) contain only NA in 'data': %s",
+                 paste(setDiff(actual_value_var, value_var), collapse = ", ")))
+  value_var <- value_var[1]
+
+  # Get data on relevant variables:
+  .d <- .d[, .SD, .SDcols = c("ID", "date", "c_visit", "variable", "part", value_var)]
+  if(.d[, is.integer(get(value_var))]) .d[, (value_var) := as.numeric(get(value_var))]
+  if(nrow(.d) == 0)
+    stop("No rows in 'data' for this combination of 'variable' and 'part'")
+
+  # Get set of unique visit dates:
+  dl <- get_unique_visit_data(.d, dontrt = dontrt, dt_day0 = dt_day0)
+  
+  # Add variable, part and value from .d to unique visit dates:
+  dl <- merge(dl, .d, by = c("ID", "c_visit", "date"), all.x = TRUE, sort = FALSE)
+  
+  # Add value0 (baseline) and chgbl variables if 'day0' exists:
+  if("day0" %in% dl[, unique(c_visit)]) {
+    dl[, v0 := get(value_var)[c_visit == "day0"], by = ID]
+    if(dl[, is.numeric(get(value_var))]) {
+      # Impute missing baseline values by the mean:
+      avg_v0 <- dl[c_visit == "day0", mean(v0, na.rm = TRUE)]
+      dl[is.na(v0), v0 := avg_v0]
+      # Compute change-from-baseline value:
+      dl[, chgbl := value - v0]
+    }
+    setnames(dl, "v0", paste0(value_var, 0))
+  } 
+  setorder(dl, ID, n_target)
+
+  # Add data on treatment status, variable, part, and c_ID:
+  # c_on_treat is "yes" or "no" between visits 0 and 14, and "NR" otherwise.
+  dl[, c_on_treat := "NR"]                 # NR: Not Relevant
+  dl[n_target > 0 & n_target < 14, 
+     c_on_treat := fifelse(!is.na(i_on_treat) & i_on_treat == 1, "yes", "no")]
+  dl[, `:=`(variable = Variable,           # Fill in the NAs
+            part     = Part,               # Fill in the NAs
+            c_ID     = as.character(ID))]  # required by mmrm()
+  
+  # Add date of premature treatment discontinuation for subjects who do that:
+  dl <- merge(dl, dontrt[!is.na(d_prem_trt_disc), .(ID, d_prem_trt_disc)], 
+              by = "ID", all.x = TRUE)
+
+  # FAS: subjects with at least one in-window post-baseline observation:
+  if(nrow(dl[n_target >= 4]) > 0) {
+    fas_ids <- dl[n_target >= 4 &  state == "in_window" & !is.na(get(value_var)), 
+                  unique(ID)]
+    dl[, c_FAS := fifelse(ID %in% fas_ids, "yes", "no")]
+  }
+  
+  # Make f_visit from c_visit:
+  dl <- set_f_visit(dl)
+
+  # Add derived variables: trt, c_SAS:
+  dl <- add_derived_data(dl, which = c("trt", "c_SAS"))
+  
+  dl[]
+}
+```
+
+
+Get analysis data for these combinations of variable and part:
+```{r compute_analysis_data}
+# All total scores from rating scales:
+var_parts <- d5[, .N, keyby = .(variable, part)]
+dl0 <- lapply(1:nrow(var_parts), function(i) {# i <- 1
+  # print(i)
+  mk_analysis_data(data = d5, 
+                   variable = var_parts[i, variable], 
+                   part = var_parts[i, part])
+  }) |> rbindlist(fill = TRUE)
+dl0
+
+# madrs,                total10
+# madrs,                total6
+# hamd,                 total17
+# hamd,                 total6
+# mdi,                  total
+# hama,                 total
+# saps,                 total
+# ymrs,                 total
+# gti,                  total
+# facitf,               total
+
+# Additional analysis variables that need extraction:
+var_parts_txt <- "
+variable,             part
+gaf,                  gaf
+sysblodtryk,          sysblodtryk 
+diablodtryk,          diablodtryk 
+puls,                 puls 
+temp,                 temp 
+qtc_interval,         qtc_interval
+respirationsfrekvens, respirationsfrekvens 
+hoejde,               hoejde 
+vaegt,                vaegt"
+
+d <- get_derived_data()
+var_parts <- fread(input = var_parts_txt)
+dl1 <- lapply(1:nrow(var_parts), function(i) {# i <- 1
+  # print(i)
+  mk_analysis_data(data = d, 
+                   variable = var_parts[i, variable], 
+                   part = var_parts[i, part])
+  }) |> rbindlist(fill = TRUE)
+
+dl1
+```
+
+Note that different sets of observations can be included in on-treatment and any-treatment analyses. Therefore on-treatment observations are not necessarily a true subset of the any-treatment observations.
+
+Also note that combinations of ID and Visit with no data have `NA` in their `i_on_treat` flags while in `c_on_treat` this is coded as `NR` (Not Relevant).
+
+Get biochemistry data:
+```{r get_biochemistry_data}
+d1 <- d[category == "blod_data"] |> rm_na_cols() |> droplevels()
+
+# crp and hcg have values of the form '<0.x' so we extract them as 'c_value'.
+# All other variables are extracted as 'value'.
+d1[!variable %in% c("crp", "hcg"), value := CRP::comma2numeric(c_value)] 
+
+# Check that all c_value (except for crp and hcg) can be converted to numeric:
+stopifnot(
+  d1[!variable %in% c("crp", "hcg") & is.na(value) & !is.na(c_value), .N] == 0,
+  d1[, all(variable == part)]
+)
+
+varibs <- d1[, unique(variable)]
+dl2 <- lapply(varibs, function(varib) { # varib <- varibs[1]
+  # print(varib)
+  mk_analysis_data(data        = d1, 
+                   variable    = varib, 
+                   part        = varib)
+  }) |> rbindlist(fill=TRUE)
+
+dl2
+```
+
+
+Save analysis data to file:
+```{r save_analysis_data}
+# Combine all data:
+dl <- rbind(dl0, dl1, dl2, fill = TRUE)
+dl <- set_f_visit(dl)
+
+# Save data:
+saveRDS(dl, file="02_data_derived/analysis_data.rds")
+```
+
+
+Get BACS data:
+```{r get_bacs_data}
+## Look at bacs data in d:
+# d[variable == "bacs", .N, part]
+# d[variable == "bacs" & part == "tol", .N, value]
+
+## Example: extract a single bacs variable:
+# mk_analysis_data(d, variable = "bacs", part = "tol")
+
+# Extract all BACS variables:
+bacs_parts <- d[variable == "bacs", unique(part)]
+dtbacs <- lapply(bacs_parts, function(Part) {
+  mk_analysis_data(d, variable = "bacs", part = Part)
+}) |> rbindlist()
+
+# Save raw bacs data to file:
+saveRDS(dtbacs, file = "02_data_derived/bacs_raw.rds")
+```
+
+
+## Appendix
+
+
+### **R** session info
+
+```{r}
+sessionInfo()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

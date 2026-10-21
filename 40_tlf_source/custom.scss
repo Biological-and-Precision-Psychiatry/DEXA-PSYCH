@@ -1,0 +1,16 @@
+/*-- scss:rules --*/
+
+/* Collapse all nested TOC levels by default */
+nav[role="doc-toc"] ul ul {
+  display: none;
+}
+
+/* Show the ul that contains an active link */
+nav[role="doc-toc"] ul ul:has(a.active) {
+  display: block;
+}
+
+/* Show children of a li whose direct link is active */
+nav[role="doc-toc"] li:has(> a.active) > ul {
+  display: block;
+}

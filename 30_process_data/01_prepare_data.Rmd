@@ -1,0 +1,964 @@
+---
+title: "Prepare DEXA-PSYCH Data for Statistical Analyses"
+author: "Rune Haubo B Christensen and Eva Nina Sparre Wandall"
+date: "`r Sys.Date()`, original: 2025-07-23"
+output: 
+  html_document:
+    self_contained: yes    
+    toc: yes
+    toc_float: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup0, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+
+# wider output when knit'ing:
+if (isTRUE(getOption("knitr.in.progress")) && !knitr::is_latex_output()) {
+  options(width = 110)
+}
+```
+
+```{r setup, results='hide', message=FALSE}
+## Load packages:
+library(data.table)
+library(readxl)
+library(writexl)
+library(lubridate)
+library(digest)
+
+## Install package CRP (and remotes) if not installed:
+if(!isTRUE(require("remotes", quietly = TRUE))) install.packages("remotes")
+if(!isTRUE(require("CRP", quietly = TRUE)))
+  remotes::install_github("Biological-and-Precision-Psychiatry/CRP")
+library(CRP)
+
+## Load functions:
+source("20_functions/source_dir.R")
+source_dir("20_functions")
+
+## Make directories if not there:
+tables_dir1      <- "40_tlf_source/tables"            # manual tables
+figures_dir1     <- "40_tlf_source/figures"           # manual figures
+tables_dir2      <- "40_tlf_source/auto_tables"       # html and tex from pipeline
+figures_dir2     <- "40_tlf_source/auto_figures"      # png and pdf  from pipeline
+outputs_dir      <- "50_output_db/outputs"            # rds files with analyses
+mmrm_data_dir    <- "50_output_db/mmrm_data"          # mmrm imputed data
+pp_output_dir    <- "80_parallel_programming/pp_outputs" # output of parallel programming
+required_dir <- c("50_output_db", "03_checksums", "02_data_derived", 
+                  "04_data_checks", "05_cache",
+                  tables_dir1, figures_dir1,
+                  tables_dir2, figures_dir2,
+                  outputs_dir, mmrm_data_dir, pp_output_dir)
+for (dir in required_dir) if(!dir.exists(dir)) dir.create(dir)
+```
+
+
+## Read and format data
+
+Read REDCap generated `.csv` data file and `.r` code file.
+
+- We determine the date-time-stamp of the data to read from the checksum files in `03_checksums`
+- When new data are exported from REDCap, the checksums can be updated by (1) generating new checksums using the `mk_checksums()` function and (2) by deleting the old checksums in `03_checksums`.
+- Copies of all current and previous checksums are stored on the `L`-drive. 
+- It is not possible to read data if there are multiple copies of checksums in `03_checksums`. This is by design to avoid ambiguity about which data export the analyses are based on.
+
+```{r}
+# Generate Checksums when new data are exported from REDCap:
+# mk_checksums(date = "latest")
+# mk_checksums(date = "2026-05-01")
+# test_checksums(filetype = "csv")
+# test_checksums(filetype = "r")
+
+# Read csv data file:
+d <- read_csv_file()
+
+# Read R-file with label definitions for factors etc.:
+rcode_file <- read_r_file()
+```
+Note that: 
+
+1. We take care to copy contents to temp-files before reading their contents into **R**. This is because we are reading from a network drive `L:` where communication can be slow. This is handled by the `read_csv_file()` and `read_r_file()` functions.
+2. The `read_[r,csv]_file` functions test that checksums generated on the files match expected baseline checksums.
+3. The data file (denoted  `d` in the code block above) contains `r nrow(d)` rows (data entries) and `r ncol(d)` columns (variables).
+
+Process the R-code file: Extract variables and labels from REDCap R-code file:
+```{r}
+## Extract all lines starting with 'label(':
+label_id <- grep("^label\\(", rcode_file)
+
+## Split into variable name and label:
+x <- strsplit(rcode_file[label_id], " = ")
+stopifnot(all(sapply(x, length) == 2))
+varib <- sapply(x, "[", 1L)
+label <- sapply(x, "[", 2L)
+
+## Clean variable names:
+varib <- trimws(varib)
+varib <- gsub("^label\\(data\\$", "", varib)
+varib <- gsub("\\)$", "", varib)
+
+## Collect variables and labels into data.table:
+labdt <- data.table(variable=varib, new_name=varib, label=gsub('"', '', label))
+```
+
+Read structured participant exceptions (prevents direct reference to ID numbers in the code base):
+```{r}
+path2L <- "L:/AuditData/DEXA-PSYCH/15 - Databehandling/02b - exceptions to ID links"
+exc_path <- file.path(path2L, paste0("exceptions.csv"))
+if(!file.exists(exc_path)) stop("Cannot locate file: '", exc_path, "'")
+except <- fread(file = exc_path)
+exceptions <- strsplit(except$participants, split = ",")
+exceptions <- lapply(exceptions, function(vec) trimws(vec))
+names(exceptions) <- except$exception
+
+# Save named list of exceptions with relevant IDs:
+saveRDS(exceptions, file = "02_data_derived/exceptions.rds")
+```
+
+
+## Coerce to factor
+
+We coerce all categorical variables with factor level definitions on the REDCap R-code file to factors except the following groups of variables (adding "^" in front a string means that all variables that start with the string are included).
+
+Variables not be coerced to factors:
+```{r}
+factor_exclude <- c(
+  "^madrs|^hamd|^sans|^saps|^mdi|^hama|^bacs|^ymrs|^eq5d5l|^gti|^facitf|^cssrs") 
+
+# But these ARE coerced to factor regardless:
+factor_include <- c("complete$", "mens_janej") 
+```
+
+Additionally we have manually defined the following factor levels (can be edited in the file):
+```{r}
+map_manual <- readLines("01_data_input/factor_mappings_manual.R")
+cat(map_manual, sep="\n")
+```
+
+Coerce categorical variables to factors:
+```{r}
+## Select all R-code with factor-mapping:
+begin_mapping <- grep("^\\#Setting Factors", rcode_file) + 1
+rcode <- rcode_file[begin_mapping:length(rcode_file)]
+
+## Remove lines starting with 'data$':
+notkeep <- grep("^data\\$", rcode)
+rcode <- rcode[-notkeep]
+
+## Extract variables with mapping:
+mapvar <- getgrep("^mapping_", rcode)
+mapvar <- gsub("mapping_| = .*$", "", mapvar)
+mapvar_man <- getgrep("^mapping_", map_manual)
+mapvar_man <- gsub("mapping_| = .*$", "", mapvar_man)
+
+## Check that all mapping variables also exist in data:
+stopifnot(all(mapvar %in% labdt$variable))
+stopifnot(all(mapvar_man %in% labdt$variable))
+
+## Flag variables with potential for factor mapping in variable overview:
+labdt[, has_mapping := fifelse(variable %in% c(mapvar, mapvar_man), 1, 0)]
+
+## Flag variables for factor coercion:
+labdt[, make_factor := has_mapping]
+
+## Don't coerce these variables:
+labdt[grep(paste(factor_exclude, collapse = "|"), variable), make_factor := 0]
+
+## But do coerce these:
+labdt[grep(paste(factor_include, collapse = "|"), variable), make_factor := 1]
+
+## Tabulate variables by make_factor:
+labdt[, .N, make_factor]
+
+## Check that make_factor is either 0 or 1:
+stopifnot(labdt[, all(make_factor %in% 0:1)])
+
+## Check that there is a mapping for all variables being coerced to factor:
+stopifnot(labdt[make_factor == 1, all(has_mapping == 1)])
+
+## Function that coerces variables to factors:
+coerce2factor <- function(data, variables, rcode_mapping) {
+
+  stopifnot(inherits(data, "data.table"),
+            length(variables) > 0,
+            is.character(variables),
+            inherits(data, "data.frame"),
+            is.list(rcode_mapping))
+  dd <- copy(data) # don't change input data
+  
+  ## Evaluate code on all factor-mappings:
+  for(rcm in rcode_mapping) eval(expr=parse(text=rcm))
+
+  # Ensure that mappings exist for all variables:
+  map_var <- paste0("mapping_", variables)
+  stopifnot(all(sapply(map_var, exists, envir=environment())))
+  
+  ## Generate factor coercion code:
+  data_name <- "dd"
+  x <- paste0(data_name, "$", variables, " <- factor(", 
+              data_name, "$", variables, ", levels = names(mapping_", variables,
+              "), labels = mapping_", variables, ")")
+  
+  ## Coerce all variables to factors:
+  for(i in 1:length(x)) eval(parse(text=x[i]))
+
+  ## Return data with new factors:
+  dd[]
+}
+
+## Coerce all variables to factors:
+variables <- labdt[make_factor == 1, variable]
+d2 <- coerce2factor(data=d, variables, rcode_mapping = list(rcode, map_manual))
+
+## Check that all completion flags are factors with expected levels:
+dcomplete <- d2[, .SD, .SDcols = getgrep("complete$", names(d2))]
+exp_levs <- c("Incomplete", "Unverified", "Complete")
+stopifnot(all(sapply(dcomplete, is.factor)),
+          all(sapply(dcomplete, function(x)  all(levels(x) == exp_levs))))
+```
+
+
+## Change variable names
+
+We make the following changes to variable names:
+```{r}
+chg_names <- fread(file="01_data_input/variable_name_change.csv")
+old_names <- chg_names$old_name
+new_names <- chg_names$new_name
+
+stopifnot(
+  anyDuplicated(old_names) == 0,
+  anyDuplicated(new_names) == 0,
+  all(old_names %in% labdt[, variable]),
+  all(!new_names %in% labdt[, variable]),
+  length(old_names) == length(new_names))
+```
+
+We also remove the `redcap_` pre-script from variables that has it.
+
+Change all variable names in data to `new_name`:
+```{r}
+## Format new_name:
+for(i in seq_along(old_names))
+  labdt[variable == old_names[i], new_name := new_names[i]]
+
+# Remove 'redcap_' pre-script:
+labdt[, new_name := gsub("^redcap_", "", new_name)]
+
+## Change names from 'old' to 'new':
+setnames(d2, old = labdt[, variable], new = labdt[, new_name])
+```
+
+The REDCap-data are organized in the following 11 blocks (identified by `redcap_event_name`):
+
+- screen
+- day 0, 2, 4, 7, 14, 28, month 6, 
+- events
+- deviations
+- conclusion
+
+We split the data by block and for each block remove variables that are not used in that block (a variable that is not used in a block is identified by containing only missing values in that block).
+
+Split dataset by 'event_name' and keep only non-empty variables in each block:
+```{r}
+# Split data by redcap_event_name variable:
+dl <- split(d2, by="event_name", sorted = TRUE)
+
+# Keep only variables specific to each redcap_event_name:
+dl2 <- lapply(dl, function(X) X[, !sapply(X, function(x) all(is.na(x))), with = FALSE])
+ncol_dl2 <- sapply(dl2, ncol) # no. variables per block
+```
+
+Split by block there are a total of `r sum(ncol_dl2)` variables which distribute among blocks as follows:
+```{r}
+tab <- cbind("no. variables" = ncol_dl2)
+rbind(tab, rbind("Total" = sum(tab)))
+```
+
+We save data to disk as both `xlsx` file and `rds` file. The former is easy to visually inspect while the latter preserves all information on labels and factor levels which is lost with the conversion to `xlsx` file format. 
+
+The `xlsx`-file will have 11 sheets; one sheet for each of block.
+
+Save data to disk:
+```{r}
+# Write data to separate excel sheets in the same file:
+write_xlsx(dl2, path="02_data_derived/all_data.xlsx")
+saveRDS(dl2, file="02_data_derived/all_data_by_visit.rds")
+```
+
+
+## Compute variable summaries
+
+We compute and save a summary of all variables to `variable_summaries.xlsx` containing information on 
+
+- `sheet`: Name of the block (ie. `redcap_event_name`) 
+- `variables`: Variable name
+- `var_id`: column number within the block in the derived data.
+- `var_id_orig`: column number in the original data exported from REDCap
+- `rows`: Number of data entries
+- `cols`: number of columns = number of variables (in the block)
+- `n_unique`: no. unique values of the variable
+- `n_notNA`: no. non-missing entries for the variable
+- `n_ NA`: no. missing entries for the variable
+- `n_0char`: if the variable is of type character the number of entries that are empty strings (of length 0)
+- `mode`: character/numeric/factor/date mode of the variable
+- `mean`, `sd`, `min`, `median`, `max`: summary statistics (only for numeric variables)
+- `levels`: ';'-separated list of levels for factors
+- `label`: the variable label providing a description of the variable (as given by REDCap)
+
+```{r}
+# Function to determine character/numeric/factor/date mode of a variable:
+get_my_mode <- function(x) {
+  .mode <- mode(x)
+  stopifnot(require(lubridate))
+  if(.mode == "numeric") {
+    if(inherits(x, "Date") | is.POSIXct(x) | is.POSIXlt(x) | is.POSIXt(x)) .mode <- "date"
+    if(is.factor(x)) .mode <- "factor"
+  }
+  .mode
+}
+
+# Summarize all variables in all sheets:
+nms_dl2 <- names(dl2)
+sheet_nms <- lapply(setNames(nms_dl2, nms_dl2), function(nm) { # nm <- nms_dl2[1]
+  dt <- dl2[[nm]]
+  res <- data.table(sheet = nm, variables = names(dt), var_id = 1:ncol(dt), 
+             var_id_orig = which(names(d2) %in% names(dt)),
+             rows = dt[, .N], cols = ncol(dt),
+             n_unique = dt[, sapply(.SD, uniqueN)],
+             "n_notNA" = dt[, sapply(.SD, function(x) sum(!is.na(x)))],
+             n_NA = dt[, sapply(.SD, function(x) sum(is.na(x)))],
+             n_0char = dt[, sapply(.SD, function(x) if(is.character(x)) 
+               sum(x == "", na.rm=TRUE) else NA_real_)],
+             mode = dt[, sapply(.SD, get_my_mode)],
+             mean = dt[, sapply(.SD, function(x) if(is.numeric(x)) 
+               signif(mean(x, na.rm=TRUE), 3) else NA_real_)],
+             sd = dt[, sapply(.SD, function(x) if(is.numeric(x)) 
+               signif(sd(x, na.rm=TRUE), 3) else NA_real_)],
+             min = dt[, sapply(.SD, function(x) if(is.numeric(x)) 
+               signif(min(x, na.rm=TRUE), 3) else NA_real_)],
+             median = dt[, sapply(.SD, function(x) if(is.numeric(x)) 
+               signif(median(x, na.rm=TRUE), 3) else NA_real_)],
+             max = dt[, sapply(.SD, function(x) if(is.numeric(x)) 
+               signif(max(x, na.rm=TRUE), 3) else NA_real_)],
+             levels = dt[, sapply(.SD, function(x) paste(levels(x), collapse = "; "))]) 
+  res <- merge(res, labdt[, .(variables=variable, label)], by="variables", 
+               all.x = TRUE, sort = FALSE)
+  setcolorder(res, c("sheet", "variables"))
+  res
+})
+
+# Write variable summaries to excel file:
+write_xlsx(sheet_nms, path="02_data_derived/variable_summaries.xlsx")
+```
+
+
+## Extract data
+
+To prepare data for statistical analyses we extract different portions of the data in a structured fashion. This is mostly accomplished by the function `get_dexadata` written for this purpose and included in an appendix to this report.
+
+Extract baseline data, baseline data variables names and names of screening variables: 
+```{r}
+dbl <- dl2[["day0"]]
+nmsdbl <- names(dbl)
+nmsscr <- names(dl2[["screen"]])
+```
+
+### Extract screening data (only screening visit)
+
+```{r}
+var_screen <- 
+  c("rekrut_fra", "initialer", "foedselsdag", "screen_inkl_janej", 
+    "screen_noninkl_aarsag", "screen_noninkl_aarsag_anden", "screen_assessor", 
+    "screen_komm", "id_og_screeningslog_complete", "samtykke", "samtykke_dato", 
+    "psych_flame", "monsenso", "samtykke_komm", "informeret_samtykke_complete"
+  )
+# dput(nmsscr[4:length(nmsscr)])
+stopifnot(setequal(var_screen, nmsscr[4:length(nmsscr)]))
+
+show_variables(datalist=dl2, names="samtykke", type = "any")
+
+screen_data <- lapply(var_screen, function(v) { 
+  # print(v)
+  get_dexadata(datalist = dl2, name=v, name_type="exact", dato_default="screen_dato",
+               guess_date = FALSE, exclude_varibs = "NONE")
+}) |> rbindlist(fill = TRUE) 
+
+screen_data <- screen_data[!is.na(date) & !(is.na(d_value) & is.na(c_value))]
+
+stopifnot(all(c("d_value", "c_value") %in% names(screen_data)),
+          all(!c("value") %in% names(screen_data)),
+          all(var_screen %in% screen_data[, unique(orig)]),
+          screen_data[, uniqueN(date_var) == 1])
+screen_data[1:5]
+```
+
+
+### Extract besoeg data (most visits)
+
+```{r}
+var_besoeg <- 
+  c("repeat_instance", "besoeg_indtaster", "besoeg_tele_fysisk", "besoeg_genoptag", 
+    "besoeg_datoafbrudt", "besoeg_fremmoede", "besoeg_komm", "besgsregistrering_complete", 
+    "medicin_udl_dato", "rand_id", "rand_id_tjek", "medicin_maengde", 
+    "batchnr", "udloebsdato", "forsoegsmedicin_startdato", "forsoegsmedicin_slutdato", 
+    "medicin_udl", "medicin_investigator", "udlmedicin_komm", 
+    "randomisering_og_medicinudlevering_complete", "besoeg_komplet",
+    "besoeg_afbrydelse_aarsag", "besoeg_afbrydelse_aarsag_andet", 
+    "besoeg_afbrydelse_nydato", "besoeg_genoptag_datoplan", "besoeg_genoptag_protokol", 
+    "besoeg_ejnytbesoeg_aarsag", "besoeg_ejnytbesoeg_andet")
+stopifnot(setequal(var_besoeg, nmsdbl[c(3, 5:11, 572:(length(nmsdbl)-1))]))
+
+show_variables(datalist = dl2, names=var_besoeg, type="exact")
+
+besoeg_data <- lapply(var_besoeg, function(nm) {
+  # print(nm)
+  get_dexadata(datalist = dl2, name = nm, name_type = "exact", clean_part = FALSE, 
+               dato_default = c("besoeg_dato", "haendelse_startdato", "dato_afvigelse"),
+               guess_date = FALSE,
+               exclude_varibs = c("NONE"))
+}) |> rbindlist(fill=TRUE)
+
+sapply(besoeg_data, function(x) sum(is.na(x)))
+besoeg_data <- besoeg_data[!is.na(date) & !(is.na(value) & is.na(c_value) & is.na(d_value))]
+stopifnot(all(c("value", "d_value", "c_value") %in% names(besoeg_data)),
+          # all(!c("value") %in% names(besoeg_data)),
+          all(var_besoeg %in% besoeg_data[, unique(orig)]),
+          besoeg_data[, all(unique(date_var) == 
+                        c("besoeg_dato", "haendelse_startdato", "dato_afvigelse"))])
+
+besoeg_data
+```
+
+
+### Extract in/exclusion data (only day0 visit)
+
+```{r}
+var_inex <- 
+  c("inklusion_depression", "inklusion_madrs", "inklusion_med", 
+    "inklusion_age", "inklusion_habil", "inklusion_danish", "eksklusion_allergy", 
+    "eksklusion_recentgluco", "eksklusion_mao", "eksklusion_ecttms", 
+    "eksklusion_medicin", "eksklusion_prevpsych", "eksklusion_diuretics", 
+    "eksklusion_suicide", "eksklusion_mania", "eksklusion_fambipolar", 
+    "eksklusion_vaccine", "eksklusion_contragluco", "eksklusion_sud", 
+    "eksklusion_pregnant", "eksklusion_dm", "eksklusion_qtc", "eksklusion_alat", 
+    "kommentar_inex", "inex_konklusion", "in_og_eksklusionskriterier_complete")
+stopifnot(setequal(var_inex, nmsdbl[c(12:36, 38)]),
+          all(var_inex %in% names(dbl)))
+show_variables(datalist = dl2, names=var_inex, type = "exact")
+
+inex_data <- lapply(var_inex, function(nm) {
+  # print(nm)
+  get_dexadata(datalist = dl2, name = nm, name_type = "exact", clean_part = FALSE, 
+               dato_default = "dato_inkl_vurdering",
+               guess_date = FALSE,
+               exclude_varibs = c("NONE"))
+}) |> rbindlist(fill=TRUE)
+
+inex_data <- inex_data[!is.na(date) & !(is.na(c_value))]
+stopifnot(all(c("c_value") %in% names(inex_data)),
+          all(!c("d_value", "value") %in% names(inex_data)),
+          all(var_inex %in% inex_data[, unique(orig)]),
+          inex_data[, uniqueN(date_var) == 1])
+inex_data
+```
+
+
+### Extract vital data (day0 and day7 visits)
+
+```{r}
+var_vital <- c("sysblodtryk", "diablodtryk", "puls", "temp", "respirationsfrekvens",
+               "hoejde", "vaegt", "mens_janej", "mens_start")
+
+show_variables(datalist = dl2, names=var_vital, type = "exact")
+
+vital_data <- lapply(var_vital, function(v) { 
+  # print(v)
+  get_dexadata(datalist = dl2, name=v, name_type="exact", dato_default="vitalevaerdier_dato",
+               guess_date = FALSE, exclude_varibs = "NONE")
+}) |> rbindlist(fill = TRUE) 
+
+vital_data <- vital_data[!is.na(date) & !(is.na(value) & is.na(c_value) & is.na(d_value))]
+
+stopifnot(all(c("c_value", "d_value", "value") %in% names(vital_data)),
+          # all(!c("d_value", "value") %in% names(vital_data)),
+          all(var_vital %in% vital_data[, unique(orig)]),
+          vital_data[, uniqueN(date_var) == 1])
+
+vital_data
+```
+
+
+### Extract blod data (day0 and day7 visits)
+
+Note that we only extract blood data as characters because some variables contain truncated values that require special handling.
+
+```{r}
+var_blod <- c("erythrocytter", 
+              "hbg", "leukocytter", "basofil", "eosinofil", "lymfocytter", 
+              "monocytter", "neutrofile", "metamyelopro", "trombocytter", "blodsukker", 
+              "kalium", "kreatinin", "natrium", "crp", "alat", "fosfatase", 
+              "hcg", "hba1c", "tsh", "kolesterol", "hdl", "ldl", "triglycerider")
+show_variables(datalist = dl2, names=var_blod)
+
+blod_data <- lapply(var_blod, function(v) { 
+  # print(v)
+  get_dexadata(datalist = dl2, name=v, name_type="exact", dato_default="blod_dato", 
+               guess_date = FALSE, value_character = TRUE, 
+               exclude_varibs = "NONE")
+}) |> rbindlist()  
+
+blod_data <- blod_data[!is.na(date) & !(is.na(c_value))]
+
+stopifnot(all(c("c_value") %in% names(blod_data)),
+          all(!c("value", "d_value") %in% names(blod_data)),
+          all(var_blod %in% blod_data[, unique(orig)]),
+          blod_data[, uniqueN(date_var) == 1])
+
+blod_data
+```
+
+
+### Extract EKG data (day0 and day7 visits)
+
+```{r}
+var_ekg <- c("ekg_billede", "qtc_interval", "fysiologi_komm",
+  "blodprver_ekg_og_vitalparametre_complete")
+
+show_variables(datalist = dl2, names=var_ekg, type = "exact")
+
+ekg_data <- lapply(var_ekg, function(v) { 
+  # print(v)
+  get_dexadata(datalist = dl2, name=v, name_type="exact", dato_default="ekg_dato",
+               guess_date = FALSE, exclude_varibs = "NONE")
+}) |> rbindlist(fill = TRUE) 
+
+ekg_data <- ekg_data[!is.na(date) & !(is.na(value) & is.na(c_value))]
+
+stopifnot(all(c("value", "c_value") %in% names(ekg_data)),
+          all(!c("d_value") %in% names(ekg_data)),
+          all(var_ekg %in% ekg_data[, unique(orig)]),
+          ekg_data[, uniqueN(date_var) == 1])
+ekg_data
+```
+
+
+### Anamnese (day0 visit)
+
+```{r}
+var_anam <- 
+  c("sex", "koen_identitet", "etnicitet", "dep_diagnose_journal", 
+    "melankoliform_journal", "dep_start", 
+    "ambulant_indlagt", "indlagt_start", "dep_tidligere", "dep_tidligere_antal", 
+    "dep_tidligere_1_start", "dep_tidligere_1_slut", "dep_tidligere_2_start", 
+    "dep_tidligere_2_slut", "dep_tidligere_3_slut", "dep_tidligere_3_start", 
+    "dep_tidligere_4_start", "dep_tidligere_4_slut", "dep_tidligere_5_slut", 
+    "dep_tidligere_5_start", "dep_tidligere_6_slut", "dep_tidligere_6_start", 
+    "dep_tidligere_7_start", "dep_tidligere_7_slut", "dep_tidligere_8_start", 
+    "dep_tidligere_8_slut", "dep_tidligere_9_start", "dep_tidligere_9_slut", 
+    "psyk_indl", "psyk_indl_antal", "psyk_indl_1_start", "psyk_indl_1_slut", 
+    "psyk_indl_2_start", "psyk_indl_2_slut", "psyk_indl_3_start", 
+    "psyk_indl_3_slut", "psyk_indl_4_start", "psyk_indl_4_slut", 
+    "psyk_indl_5_start", "psyk_indl_5_slut", "psyk_aktuelt_janej", 
+    "psyk_aktuelt", "psyk_aktuel_komm", "psyk_tidligere_janej", "psyk_tidligere", 
+    "psyk_tidligere_komm", "andre_sygdomme_janej", "andre_sygdomme", 
+    "andre_sygdomme_komm", "tidligere_sygdom_janej", "tidligere_sygdom", 
+    "tidligere_sygdom_komm", "dispositioner_janej", "dispositioner", 
+    "dispositioner_komm", "antal_antidep", "antidep_1", "antidep_1_dose", 
+    "antidep_1_enhed", "antidep_1_perdoegn", "antidep_1_start", "antidep_1_komm", 
+    "antidep_2", "antidep_2_dose", "antidep_2_enhed", "antidep_2_perdoegn", 
+    "antidep_2_start", "antidep_2_komm", "antidep_3", "antidep_3_dose", 
+    "antidep_3_enhed", "antidep_3_perdoegn", "antidep_3_start", "antidep_3_komm", 
+    "antidep_tidligere_janej", "antidep_tidligere_antal", "antidep_tidligere_1", 
+    "antidep_tidligere_1_start", "antidep_tidligere_1_slut", "antidep_tidligere_1_dose", 
+    "antidep_tidligere_1_enhed", "antidep_tidligere_1_komm", "antidep_tidligere_2", 
+    "antidep_tidligere_2_start", "antidep_tidligere_2_slut", "antidep_tidligere_2_dose", 
+    "antidep_tidligere_2_enhed", "antidep_tidligere_2_komm", "antidep_tidligere_3", 
+    "antidep_tidligere_3_start", "antidep_tidligere_3_slut", "antidep_tidligere_3_dose", 
+    "antidep_tidligere_3_enhed", "antidep_tidligere_3_komm", "antidep_tidligere_4", 
+    "antidep_tidligere_4_start", "antidep_tidligere_4_slut", "antidep_tidligere_4_dose", 
+    "antidep_tidligere_4_enhed", "antidep_tidligere_4_komm", "anden_medicin_janej", 
+    "anden_medicin_antal", "anden_medicin_1", "anden_medicin_1_dose", 
+    "anden_medicin_1_enhed", "anden_medicin_1_perdoegn", "anden_medicin_1_komm", 
+    "anden_medicin_2", "anden_medicin_2_dose", "anden_medicin_2_enhed", 
+    "anden_medicin_2_perdoegn", "anden_medicin_2_komm", "anden_medicin_3", 
+    "anden_medicin_3_dose", "anden_medicin_3_enhed", "anden_medicin_3_perdoegn", 
+    "anden_medicin_3_komm", "anden_medicin_4", "anden_medicin_4_dose", 
+    "anden_medicin_4_enhed", "anden_medicin_4_perdoegn", "anden_medicin_4_komm", 
+    "anden_medicin_5", "anden_medicin_5_dose", "anden_medicin_5_enhed", 
+    "anden_medicin_5_perdoegn", "anden_medicin_5_komm", "anden_medicin_6", 
+    "anden_medicin_6_dose", "anden_medicin_6_enhed", "anden_medicin_6_perdoegn", 
+    "anden_medicin_6_komm", "anden_medicin_7", "anden_medicin_7_dose", 
+    "anden_medicin_7_enhed", "anden_medicin_7_perdoegn", "anden_medicin_7_komm", 
+    "anden_medicin_8", "anden_medicin_8_dose", "anden_medicin_8_enhed", 
+    "anden_medicin_8_perdoegn", "anden_medicin_8_komm", "tidligere_medicin_janej", 
+    "tidligere_medicin", "tidligere_medicin_komm", "medicin_komm", 
+    "psykter_janej", "psykter_type", "psykter_terapeut", "psykter_tidligere_janej", 
+    "ect_janej", "ect_type", "ect_dato", "tms_janej", "tms_dato", 
+    "anamnese_komm", "anamnese_dag_0_complete")
+# dput(nmsdbl[c(83:237, 252:253)])
+stopifnot(setequal(var_anam, nmsdbl[c(83:237, 252:253)]))
+
+show_variables(datalist = dl2, names = var_anam, type="exact")
+
+anam_data <- lapply(var_anam, function(v) {
+  # print(v)
+  get_dexadata(datalist = dl2, name=v, name_type = "exact",
+               guess_date = FALSE, dato_default = "anamnese_dato", clean_part = FALSE,
+               exclude_varibs = "NONE")
+}) |> rbindlist(fill=TRUE)
+
+anam_data <- anam_data[!is.na(date) & !(is.na(d_value) & is.na(c_value) & is.na(value))]
+stopifnot(all(c("d_value", "c_value", "value") %in% names(anam_data)),
+          all(var_anam %in% anam_data[, unique(orig)]),
+          anam_data[, uniqueN(date_var) == 1])
+anam_data
+```
+
+
+### Extract additional demographic data
+
+```{r}
+var_demo <- 
+  c("alkohol_janej", "alkohol_genstande", "alkohol_skadelig", "alkoholafhaengighed", 
+    "rygning", "pakkeaar", "stoffer_aktuelt", "stoffer_aktuelt_spec", 
+    "stoffer_skadeligt", "stoffer_tidligere", "stoffer_tidligere_spec", 
+    "uddannelse", "indkomst", "upload_fmk", "psykopatologi_komm_dag0", 
+    "dep_diagnose_scan", "dep_diagnose_scan_melank", "psykopatologisk_interview_dag_0_complete")
+# dput(nmsdbl[c(238:251, 461, 468:469, 478)])
+stopifnot(setequal(var_demo, nmsdbl[c(238:251, 461, 468:469, 478)]))
+
+show_variables(datalist = dl2, names = var_demo, type = "exact")
+
+demo_data <- lapply(var_demo, function(v) {
+  # print(v)
+  get_dexadata(datalist = dl2, name=v, name_type = "exact", dato_default = "anamnese_dato",
+               guess_date = FALSE, exclude_varibs = "NONE")
+}) |> rbindlist(fill=TRUE)
+
+demo_data <- demo_data[!is.na(date) & !(is.na(value) & is.na(c_value))]
+stopifnot(all(c("value", "c_value") %in% names(demo_data)),
+          !"d_value" %in% names(demo_data),          
+          demo_data[, uniqueN(date_var) == 1],
+          all(var_demo %in% demo_data[, unique(orig)]))
+
+demo_data
+```
+
+
+### Objektiv undersøgelse/examination (day0 and day7)
+
+```{r}
+var_objun <- 
+  c("organ_hovedpine", "organ_svimmel", "organ_synf", "organ_kraft", 
+    "organ_sensibilitet", "organ_brystsmerter", "organ_vejrtraekning", 
+    "organ_mavesmerter", "organ_kvalme", "organ_forstoppelse", "organ_faeces", 
+    "organ_diare", "organ_toerst", "organ_polydipsi", "organ_smerterurin", 
+    "organ_mens", "organ_hud", "organ_fraktur", "organ_smerter", 
+    "obj_at", "obj_lymfe", "obj_kranienerver", "obj_kraftsens", "obj_reflekser", 
+    "obj_stc", "obj_stp", "obj_abdomen", "obj_komm", "objektiv_undersgelse_complete")
+# x <- nmsdbl[c(255:283)]
+# dput(x)
+stopifnot(setequal(var_objun, nmsdbl[c(255:283)]))
+
+show_variables(datalist = dl2, names = var_objun, type="exact")
+
+objun_data <- lapply(var_objun, function(v) {
+  # print(v)
+  get_dexadata(datalist = dl2, name=v, name_type = "exact",
+               guess_date = FALSE, dato_default = "dato_obj", clean_part = FALSE,
+               , exclude_varibs = "NONE")
+}) |> rbindlist(fill=TRUE)
+
+objun_data <- objun_data[!is.na(date) & !(is.na(c_value))]
+stopifnot(all(c("c_value") %in% names(objun_data)),
+          all(!c("value", "d_value") %in% names(objun_data)),
+          all(var_objun %in% objun_data[, unique(orig)]),
+          objun_data[, uniqueN(date_var) == 1])
+
+objun_data
+```
+
+
+### Extract all rating scores; psychopathology (most visits)
+
+```{r}
+tools <- c("madrs", "hamd", "hama", "saps", "mdi", "eq5d5l", "bacs", 
+           "gti", "facitf", "gaf", "ymrs")
+
+show_variables(datalist = dl2, names=tools, type="begin")
+
+rate_data0 <- lapply(tools, function(tool) {
+  # print(tool)
+  get_dexadata(datalist = dl2, name=tool, clean_part = TRUE,
+               dato_default = c("psykopat_dato_dag0", "psykopat_dato_dag7", 
+                                "besoeg_dato", "screen_dato"))
+  }) |> rbindlist(fill=TRUE)
+
+# Also get CSSRS-data (except cssrs_antal_selvmordsforsoeg and 
+#   cssrs_dato_selvmordsforsoeg on day0):
+cssrs_data <- get_dexadata(datalist = dl2, name="cssrs", clean_part = TRUE, 
+                           guess_date = FALSE, 
+                    exclude_varibs = c("dato", "antal", "inklusion", "complete", "komm"),
+                    dato_default = c("psykopat_dato_dag0", "psykopat_dato_dag7", 
+                                     "besoeg_dato", "screen_dato"))
+rate_data <- rbind(rate_data0, cssrs_data, fill = TRUE)
+rate_data[, .N, date_var]
+
+rate_data <- rate_data[!is.na(date) & !is.na(value)]
+stopifnot("value" %in% names(rate_data),
+          all(!c("c_value", "d_value") %in% names(rate_data)),
+          setequal(rate_data[, unique(variable)], c(tools, "cssrs")))
+
+rate_data
+```
+
+
+### Extract Scan (day0 visit)
+
+Scan data are extracted separately because some scan variables are coerced to factor and some are not. The numeric rating from scan variables which are factors are also extracted and placed in the `n_value` variable.
+
+```{r}
+var_scan <- getgrep("^scan", nmsdbl)
+show_variables(datalist = dl2, names = var_scan, type="exact")
+
+scan_data <- lapply(var_scan, function(v) {
+  get_dexadata(datalist = dl2, name=v, name_type = "exact", 
+               dato_default = "psykopat_dato_dag0",
+               guess_date = FALSE, exclude_varibs = "NONE", clean_part = FALSE)
+}) |> rbindlist(fill=TRUE)
+
+scan_data <- scan_data[!is.na(date) & !(is.na(value) & is.na(c_value))]
+stopifnot(all(c("value", "c_value") %in% names(scan_data)),
+          !"d_value" %in% names(scan_data),
+          scan_data[, uniqueN(date_var) == 1])
+
+## Extract numeric ratings from factor/text results:
+scan_data[, n_value := as.numeric(substr(c_value, 1, 1))]
+stopifnot(scan_data[, all(is.na(n_value) | n_value %in% 0:9)])
+
+scan_data[is.na(value) & !is.na(n_value), value := n_value]
+## "n_value" is a numeric value (0:9) derived from c_value:
+
+scan_data
+```
+
+
+### CSSRS (day0)
+
+The CSSRS variables `cssrs_antal_selvmordsforsoeg` and `cssrs_dato_selvmordsforsoeg` are 
+not rating data and therefore extracted separately (not together with the other psychopathology rating scales data).
+
+```{r}
+var_cssrs <- c("cssrs_antal_selvmordsforsoeg", "cssrs_dato_selvmordsforsoeg")
+# var_cssrs <- getgrep("^cssrs", nmsdbl)
+
+show_variables(datalist = dl2, names=var_cssrs, type = "exact")
+
+stopifnot(all(var_cssrs %in% c(names(dl2[["day0"]]), names(dl2[["day7"]]), names(dl2[["day28"]]), names(dl2[["month6"]]))))
+
+cssrs_data <- lapply(var_cssrs, function(v) {
+  # print(v)
+  get_dexadata(datalist = dl2, name=v, name_type = "exact", 
+               dato_default = c("psykopat_dato_dag0",
+                                "psykopat_dato_dag7",
+                                "psykopat_dato_dag28",
+                                "psykopat_dato_6mdr"),
+               guess_date = FALSE, exclude_varibs = "NONE", clean_part = FALSE)
+}) |> rbindlist(fill=TRUE)
+
+cssrs_data <- cssrs_data[!is.na(date) & !(is.na(d_value) & is.na(value))]
+stopifnot(all(c("d_value", "value") %in% names(cssrs_data)),
+          cssrs_data[, uniqueN(date_var) == 1])
+
+cssrs_data
+```
+
+
+### Extract arbejdsmarked variables (day0, day7, day28 and month6 visits)
+
+```{r}
+var_arbmark <- c("arbmark_outcome", "kommentar_arbmark", 
+                 "arbejdsmarkedstilknytning_complete")
+stopifnot(setequal(var_arbmark, nmsdbl[505:507]))
+
+# show_variables(datalist = dl2, names = var_arbmark, type="any")
+show_variables(datalist = dl2, names = var_arbmark, type="exact")
+
+arbmark_data <- lapply(var_arbmark, function(v) {
+  # print(v)
+  get_dexadata(datalist = dl2, name=v, name_type = "exact",
+               guess_date = FALSE, dato_default = "arbmark_dato", clean_part = FALSE,
+               exclude_varibs = "NONE")
+}) |> rbindlist(fill=TRUE)
+
+arbmark_data <- arbmark_data[!is.na(date) & !(is.na(c_value))]
+stopifnot(all(c("c_value") %in% names(arbmark_data)),
+          !c("value", "d_value") %in% names(arbmark_data),
+          all(var_arbmark %in% arbmark_data[, unique(orig)]),
+          arbmark_data[, uniqueN(date_var) == 1])
+arbmark_data
+```
+
+
+### UKU undersøgelse (day0 and day7)
+
+```{r}
+var_uku <- 
+  c("uku_1", "uku_2", "uku_3", "uku_4", "uku_5", "uku_6", 
+    "uku_7", "uku_8", "uku_9", "uku_10", "uku_11", "uku_12", "uku_13", 
+    "uku_1_relation", "uku_2_relation", "uku_3_relation", "uku_4_relation", 
+    "uku_5_relation", "uku_6_relation", "uku_7_relation", "uku_8_relation", 
+    "uku_9_relation", "uku_10_relation", "uku_11_relation", "uku_12_relation", 
+    "uku_13_relation", "uku_global_laege", "uku_global_pt", "uku_kommentarer", 
+    "ukussri_complete")
+# dput(getgrep("uku", nmsdbl))
+stopifnot(all(var_uku %in% nmsdbl))
+
+# show_variables(datalist = dl2, names = var_uku, type="any")
+show_variables(datalist = dl2, names = var_uku, type="exact")
+
+uku_data <- lapply(var_uku, function(v) {
+  # print(v)
+  get_dexadata(datalist = dl2, name=v, name_type = "exact",
+               guess_date = FALSE, dato_default = "dato_uku", clean_part = FALSE,
+               exclude_varibs = "NONE")
+}) |> rbindlist(fill=TRUE)
+
+uku_data <- uku_data[!is.na(date) & !(is.na(c_value))]
+stopifnot(all(c("c_value") %in% names(uku_data)),
+          all(!c("value", "d_value") %in% names(uku_data)),
+          all(var_uku %in% uku_data[, unique(orig)]),
+          uku_data[, uniqueN(date_var) == 1])
+uku_data
+```
+
+
+### Extract compliance data (day7 visit)
+
+```{r}
+show_variables(datalist = dl2, names = "compliance", type = "begin")
+compl_data <- get_dexadata(datalist = dl2, name="compliance", 
+                           name_type = "begin", clean_part = TRUE,
+                           exclude_varibs = c("bivirkninger", "komm"))
+# sapply(compl_data, function(x) sum(is.na(x)))
+compl_data <- compl_data[!is.na(date) & !is.na(c_value)]
+
+stopifnot(all(!c("value", "d_value") %in% names(compl_data)),
+          all(c("c_value") %in% names(compl_data)))
+compl_data
+```
+
+### Extract psychiatric admission and suicide data (day 7, 14, 28 and month 6)
+
+```{r}
+var_adm <- c("psyk_indl_outcome", "selvmord_outcome", "sevlmord_outcome_letalitet")
+show_variables(datalist = dl2, 
+               names = c("psyk_indl_outcome", "selvmord_outcome",
+                         "sevlmord_outcome_letalitet"),
+               type = "begin")
+
+adm_data <- lapply(var_adm, function(v) {
+  # print(v)
+  get_dexadata(datalist = dl2, name=v, name_type = "begin",
+               guess_date = FALSE, dato_default = c("besoeg_dato"), 
+               clean_part = FALSE,
+               exclude_varibs = "NONE", 
+               value_character = TRUE)
+}) |> rbindlist(fill=TRUE)
+
+#adm_data <- adm_data[!is.na(c_value) & !is.na(date)]
+adm_data <- adm_data[!is.na(c_value)]
+stopifnot(all(c("c_value") %in% names(adm_data)),
+          all(!c("value", "d_value") %in% names(adm_data)),
+          all(var_adm %in% adm_data[, unique(orig)]),
+          adm_data[, uniqueN(date_var) == 1])
+
+adm_data
+```
+
+
+### Extract conclusion data
+
+```{r}
+var_concl <- c("afslut_rsag","aarsag_withdrawal_dropout")
+
+show_variables(datalist = dl2, names = var_concl, type="exact")
+
+concl_data <- lapply(var_concl, function(v) {
+  # print(v)
+  get_dexadata(datalist = dl2, name=v, name_type = "exact",
+               guess_date = FALSE, dato_default = "afslut_dato", clean_part = FALSE,
+               exclude_varibs = "NONE")
+}) |> rbindlist(fill=TRUE)
+
+concl_data <- concl_data[!is.na(date) & !(is.na(c_value))]
+stopifnot(all(c("c_value") %in% names(concl_data)),
+          all(!c("value", "d_value") %in% names(concl_data)),
+          all(var_concl %in% concl_data[, unique(orig)]),
+          concl_data[, uniqueN(date_var) == 1])
+concl_data |> print(topn = 5)
+```
+
+
+## Collect and save all data
+
+```{r}
+lst <- namedList(
+  screen_data,
+  besoeg_data,
+  inex_data,
+  vital_data,
+  blod_data,
+  ekg_data,
+  anam_data,
+  demo_data,
+  objun_data,
+  rate_data,
+  scan_data,
+  cssrs_data,
+  arbmark_data,
+  uku_data,
+  compl_data, 
+  adm_data,
+  concl_data)
+
+## Add randomization ID:
+rand <- besoeg_data[variable == "rand_id" & !is.na(value), .(ID, rand_id = value)]
+stopifnot(rand[, uniqueN(ID) == .N],
+          rand[, uniqueN(rand_id) == .N])
+lst <- lapply(lst, function(ll) 
+  merge(ll, rand, by="ID", all.x=TRUE, sort = FALSE))
+
+write_xlsx(lst, path="02_data_derived/data_by_category.xlsx")
+saveRDS(lst, file="02_data_derived/data_by_category.rds")
+```
+
+
+
+## Appendix
+
+### Functions
+
+```{r functions_appendix1, code = get_function_lines("20_functions/extract_data_fcts.R", "show_variables", roxygen = TRUE)}
+```
+
+```{r functions_appendix2, code = get_function_lines("20_functions/extract_data_fcts.R", "get_dexadata", roxygen = TRUE)}
+```
+
+```{r functions_appendix3, code = get_function_lines("20_functions/extract_data_fcts.R", "check_multivalues", roxygen = TRUE)}
+```
+
+
+### **R** session info
+
+```{r}
+sessionInfo()
+```
+
+
+
+

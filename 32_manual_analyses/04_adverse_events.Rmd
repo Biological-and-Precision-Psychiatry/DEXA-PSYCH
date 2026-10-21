@@ -1,0 +1,711 @@
+---
+title: "Make summary tables of adverse events, admissions, suicide attempts and deaths"
+author: "Eva Nina S Wandall and Rune Haubo B Christensen"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+editor_options:
+  chunk_output_type: console
+---
+
+
+```{r setup0, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+options(knitr.kable.NA = '')
+
+# wider output when knit'ing:
+if (isTRUE(getOption("knitr.in.progress")) && !knitr::is_latex_output()) {
+  options(width = 110)
+}
+```
+
+```{r setup, results='hide', message=FALSE, warning=FALSE}
+library(data.table)
+library(CRP)
+library(gt)
+library(writexl)
+
+source("20_functions/source_dir.R")
+source_dir("20_functions")
+```
+
+
+## Adverse events
+
+#### Read data and define subsets
+
+All adverse events
+```{r read_adverse_events_data}
+de <- readRDS(file = "02_data_derived/adverse_events_derived.rds")
+```
+
+Serious adverse events
+```{r}
+de_ser <- de[investigator_alvorlighed == "Yes"]
+```
+
+10% most common adverse events based on MedDRA preferred term classification
+```{r read_data}
+(meddra_top10 <- de[, .N, by = meddra_pt][order(-N)][1:ceiling(.N * 0.1), meddra_pt])
+de_top10 <- de[meddra_pt %in% meddra_top10]
+```
+
+Adverse events leading to premature discontinuation of treatment
+```{r}
+de_prem <- de[handling == "Yes"]
+```
+
+Severe, life-threatening and fatal adverse events
+```{r}
+de_severe <- de[gradering %in% c("Severe", "Life-threatening", "Fatal")]
+```
+
+Adverse events possibly or probably related to trail product
+```{r}
+de_rel <- de[investigator_relation == "Yes (possible, probable, certain)"]
+```
+
+Meta data
+```{r}
+tlf_reg <- get_metadata()
+```
+
+
+### Characteristics of adverse events 
+
+Adverse events characterized by:
+
+- Seriousness
+- Severity
+- Relationship to trial product
+- Whether the event lead to premature treatment discontinuation
+- Duration
+
+Define footer list:
+```{r}
+ae_def <- paste(
+  "Adverse events are any undesirable medical event occurring to a participant",
+  "during a clinical trial, which does not necessarily have a causal relationship",
+  "with the intervention. Adverse events were recorded from day 1 to day 10.", 
+  "If events occurred, events were followed until they subsided or until", 
+  "day 28 for the last included patient (last-patient, last-visit for day 28)."
+  )
+
+ser_def <- paste(
+  "A serious adverse event is any adverse event that results in death,", 
+  "is life-threatening, requires hospitalization or prolongation of existing",
+  "hospitalization, results in persistent or significant disability or incapacity,",
+  "or is a congenital anomaly or birth defect.")
+
+severity_def <- paste(
+  "Severity was graded using the Common Terminology Criteria for Adverse", 
+  "Events (CTCAE) scale.")
+
+abbrev <- paste("N: Number of individuals.",
+                 "%: Percentage of individuals in the safety analysis set.", 
+                 "E: Number of events.")
+
+footer_list_summary <- list(
+  ae_def = ae_def,
+  ser_def = ser_def,
+  severity_def = severity_def,
+  abbrev = abbrev
+  )
+```
+
+
+#### Summary of all adverse events
+
+Make summary of all AEs as gt table:
+```{r mk_summary_table_all_events}
+# Make summary of all AEs as dt object
+ae_sum_dt_all <- mk_ae_dt(event_data = de)
+# Make gt object version
+ae_sum_gt_all <- mk_ae_gt(ae_sum_dt_all)
+# Add footers to gt table
+ae_sum_gt_all <- add_footer_lines_to_gt(ae_sum_gt_all, footer_list_summary)
+
+# Display table
+ae_sum_gt_all
+```
+
+Save gt table:
+```{r}
+save_gt_table(ae_sum_gt_all, 
+              regi = tlf_reg[file_stem == "all_adverse_events_summary"], 
+              verbose = TRUE)
+```
+
+Make version of the same table for OVERVIEW-part of TLF-book:
+```{r mk_summary_table_all_events_overview}
+# Make footer with cross-ref to original table:
+footer_present <- 
+  paste0("Presentation is based on table: [-@sec-", 
+         tlf_reg[file_stem == "all_adverse_events_summary", endpoint_id], "]")
+footer_list_summary_overview <- 
+  c(footer_list_summary, list(present = footer_present))
+
+# Convert to gt and attach footers:
+ae_sum_gt_all_ov <- mk_ae_gt(ae_sum_dt_all) |>
+  add_footer_lines_to_gt(footer_list = footer_list_summary_overview)
+ae_sum_gt_all_ov
+
+# Save gt table:
+save_gt_table(ae_sum_gt_all_ov,
+              regi = tlf_reg[file_stem == "all_adverse_events_summary_overview"],
+              verbose = TRUE)
+```
+
+
+
+#### Summary of serious adverse events
+
+Make summary of SAEs as gt table:
+```{r}
+ae_sum_dt_ser <- mk_ae_dt(event_data = de_ser)
+ae_sum_gt_ser <- mk_ae_gt(ae_sum_dt_ser)
+ae_sum_gt_ser <- add_footer_lines_to_gt(ae_sum_gt_ser, footer_list_summary)
+ae_sum_gt_ser
+```
+
+Save gt table
+```{r mk_summary_table_serious_events}
+save_gt_table(ae_sum_gt_ser, 
+              regi = tlf_reg[file_stem == "serious_adverse_events_summary"], 
+              verbose = TRUE)
+```
+
+
+#### Summary of the 10% most common adverse event
+
+Make summary of 10% most common AEs as gt table:
+```{r}
+ae_sum_dt_top10 <- mk_ae_dt(event_data = de_top10)
+ae_sum_gt_top10 <- mk_ae_gt(ae_sum_dt_top10)
+ae_sum_gt_top10 <- add_footer_lines_to_gt(ae_sum_gt_top10, footer_list_summary)
+ae_sum_gt_top10
+```
+
+Save gt table
+```{r mk_summary_table_top10}
+save_gt_table(ae_sum_gt_top10, 
+              regi = tlf_reg[file_stem == "most_common_adverse_events_summary"], 
+              verbose = TRUE)
+```
+
+
+#### Summary of adverse events leading to premature discontinuation
+
+Make summary of AE-PMs as gt table: 
+```{r mk_summary_table_prem}
+ae_sum_dt_prem <- mk_ae_dt(event_data = de_prem)
+ae_sum_gt_prem <- mk_ae_gt(ae_sum_dt_prem)
+ae_sum_gt_prem <- add_footer_lines_to_gt(ae_sum_gt_prem, footer_list_summary)
+ae_sum_gt_prem
+```
+
+Save gt table
+```{r}
+save_gt_table(ae_sum_gt_prem, 
+              regi = tlf_reg[file_stem == "premature_discontinuation_adverse_events_summary"], 
+              verbose = TRUE)
+```
+
+
+#### Summary of severe, life-threatening and fatal adverse events
+
+Make summary of severe, life-threatening and fatal adverse events as gt table:
+```{r mk_summary_table_severe}
+ae_sum_dt_severe <- mk_ae_dt(event_data = de_severe)
+ae_sum_gt_severe <- mk_ae_gt(ae_sum_dt_severe)
+ae_sum_gt_severe <- add_footer_lines_to_gt(ae_sum_gt_severe, footer_list_summary)
+ae_sum_gt_severe
+```
+
+Save gt table
+```{r}
+save_gt_table(ae_sum_gt_severe, 
+              regi = tlf_reg[file_stem == "severe_to_fatal_adverse_events_summary"], 
+              verbose = TRUE)
+```
+
+
+#### Summary of adverse events possibly or probably related to trail product
+
+Make summary of events possibly or probably related to trail product as gt table:
+```{r mk_summary_table_rel}
+ae_sum_dt_rel <- mk_ae_dt(event_data = de_rel)
+ae_sum_gt_rel <- mk_ae_gt(ae_sum_dt_rel)
+ae_sum_gt_rel <- add_footer_lines_to_gt(ae_sum_gt_rel, footer_list_summary)
+ae_sum_gt_rel
+```
+
+Save gt table
+```{r}
+save_gt_table(ae_sum_gt_rel, 
+              regi = tlf_reg[file_stem == "adverse_events_related_to_treatment_summary"], 
+              verbose = TRUE)
+```
+
+
+### Adverse events by MedDRA classification
+
+Define footer list
+```{r}
+ae_def_meddra <- paste(
+  "Adverse events are any undesirable medical event occurring to a participant",
+  "during a clinical trial, which does not necessarily have a causal relationship",
+  "with the intervention classified according to Medical Dictionary for Regulatory",
+  "Activities (MedDRA, Version 29.0). Adverse events were recorded from day 1 to day 10.", 
+  "If events occurred, events were followed until they subsided or until", 
+  "day 28 for the last included patient (last-patient, last-visit for day 28)."
+  )
+
+top10_def <- paste("The most frequent adverse events were determined at the",
+                   "preferred term level.")
+    
+
+footer_list_meddra <- list(
+  ae_def_meddra = ae_def_meddra,
+  abbrev = abbrev
+  )
+
+footer_list_meddra_ser <- list(
+  ae_def_meddra = ae_def_meddra,
+  ser_def = ser_def,
+  abbrev = abbrev
+  )
+
+footer_list_meddra_severe <- list(
+  ae_def_meddra = ae_def_meddra,
+  severity_def = severity_def,
+  abbrev = abbrev
+  )
+
+footer_list_meddra_top10 <- list(
+  ae_def_meddra = ae_def_meddra,
+  top10_def = top10_def,
+  abbrev = abbrev
+  )
+```
+
+
+#### All adverse events by MedDRA classification
+
+Make summary of AEs by MedDRA classification as gt table:
+```{r}
+meddra_all_dt <- mk_meddra_dt(event_data = de)
+meddra_all_gt <- mk_ae_gt(meddra_all_dt)
+meddra_all_gt <- add_footer_lines_to_gt(meddra_all_gt, footer_list_meddra)
+meddra_all_gt
+```
+
+Save gt table:
+```{r}
+save_gt_table(meddra_all_gt, 
+              regi = tlf_reg[file_stem == "all_adverse_events_by_meddra"], 
+              verbose = TRUE)
+```
+
+
+#### Serious adverse events by MedDRA classification
+
+Make summary of SAEs by MedDRA classification as gt table:
+```{r}
+meddra_ser_dt <- mk_meddra_dt(event_data = de_ser)
+meddra_ser_gt <- mk_ae_gt(meddra_ser_dt)
+meddra_ser_gt <- add_footer_lines_to_gt(meddra_ser_gt, footer_list_meddra_ser)
+meddra_ser_gt
+```
+
+Save gt table:
+```{r}
+save_gt_table(meddra_ser_gt, 
+              regi = tlf_reg[file_stem == "serious_adverse_events_by_meddra"], 
+              verbose = TRUE)
+```
+
+
+#### 10% most frequent adverse events by MedDRA classification
+
+Make summary of 10 % most common AEs by MedDRA classification as gt table:
+```{r mk_meddra_table_top10_events}
+meddra_top10_dt <- mk_meddra_dt(event_data = de_top10)
+meddra_top10_gt <- mk_ae_gt(meddra_top10_dt)
+meddra_top10_gt <- add_footer_lines_to_gt(meddra_top10_gt, footer_list_meddra_top10)
+meddra_top10_gt
+```
+
+Save gt table:
+```{r}
+save_gt_table(meddra_top10_gt, 
+              regi = tlf_reg[file_stem == "most_common_adverse_events_by_meddra"], 
+              verbose = TRUE)
+```
+
+
+#### Adverse events leading to premature discontinuation
+
+Make summary of AE-PMs by MedDRA classification as gt table:
+```{r mk_meddra_table_prem}
+meddra_dt_prem <- mk_meddra_dt(event_data = de_prem)
+meddra_gt_prem <- mk_ae_gt(meddra_dt_prem)
+meddra_gt_prem <- add_footer_lines_to_gt(meddra_gt_prem, footer_list_meddra)
+meddra_gt_prem
+```
+
+Save gt table:
+```{r}
+save_gt_table(meddra_gt_prem, 
+              regi = tlf_reg[file_stem == "premature_discontinuation_by_meddra"], 
+              verbose = TRUE)
+```
+
+
+#### Summary of severe, life-threatening and fatal adverse events
+
+Make summary of severe, life-threatening and fatal AEs by MedDRA classification 
+as gt table:
+```{r mk_meddra_severe}
+meddra_dt_severe <- mk_meddra_dt(event_data = de_severe)
+meddra_gt_severe <- mk_ae_gt(meddra_dt_severe)
+meddra_gt_severe <- add_footer_lines_to_gt(meddra_gt_severe, footer_list_meddra_severe)
+meddra_gt_severe
+```
+
+Save gt table:
+```{r}
+save_gt_table(meddra_gt_severe, 
+              regi = tlf_reg[file_stem == "severe_to_fatal_events_by_meddra"], 
+              verbose = TRUE)
+```
+
+
+#### Adverse events possibly or probably related to trail product
+
+Make summary of AEs possibly or probably related to trail product by MedDRA classification 
+as gt table:
+```{r mk_meddra_rel}
+meddra_dt_rel <- mk_meddra_dt(event_data = de_rel)
+meddra_gt_rel <- mk_ae_gt(meddra_dt_rel)
+meddra_gt_rel <- add_footer_lines_to_gt(meddra_gt_rel, footer_list_meddra)
+meddra_gt_rel
+```
+
+Save gt table:
+```{r}
+save_gt_table(meddra_gt_rel, 
+              regi = tlf_reg[file_stem == "adverse_events_related_to_treatment_by_meddra"], 
+              verbose = TRUE)
+```
+
+
+
+### Line listings 
+
+
+#### Line listings of serious adverse events
+
+Add baseline data with data on SAEs, select columns and format data:
+```{r}
+# Get baseline information
+dbl <- readRDS(file="02_data_derived/baselinedata.rds")
+
+# Merge SAE and baseline data
+ll_ser <- merge(de_ser, dbl[, .(ID, c_sex, n_age)], by = "ID")
+
+# Add identifier for SAE
+ll_ser[, SAE := paste0("#", .I)]
+
+# Format investigator_relation levels
+stopifnot(ll_ser[, levels(investigator_relation)] %in% 
+            c("Yes (possible, probable, certain)", "No (none, unlikely)"))
+ll_ser[, investigator_relation := ifelse(
+  investigator_relation == "Yes (possible, probable, certain)", "Yes", "No")]
+
+# Select columns
+ll_ser <- ll_ser[, .(SAE, n_age, c_sex,trt, meddra_pt, sae_kriterie,
+                     investigator_relation)]
+
+# Format variables
+ll_ser[, n_age := round(as.numeric(n_age))]
+ll_ser[, c_sex := substr(c_sex,1,1)]
+
+# Ensure the SAE identifier maps to the correct SAE, using age (which is unique)
+# as the matching key
+stopifnot(nrow(ll_ser) == 4,
+          nrow(ll_ser[SAE == "#1" & n_age == 25]) == 1,
+          nrow(ll_ser[SAE == "#2" & n_age == 33]) == 1,
+          nrow(ll_ser[SAE == "#3" & n_age == 40]) == 1,
+          nrow(ll_ser[SAE == "#4" & n_age == 22]) == 1)
+```
+
+Specify SAE criteria and add description based on clinical notes:
+```{r}
+# SAE #1
+ll_ser[SAE == "#1", `:=` (c_sex = "M-F",
+                          sae_kriterie = "Hospitalization",
+                          Description = paste("Non-trial staff from the out-patient",
+                          "clinic at which the participant receives treatment conclude",
+                          "that the participant is at increased risk of suicide and", 
+                          "offers admission to a psychiatric ward, which the participant",
+                          "accepts. Trial product is not discontinued, as the participant",
+                          "wish to proceed with the intervention. At day 7 of the trial",
+                          "(last day of intervention) the participant reports habitual",
+                          "suicidal thoughts at baseline level.")
+                          ) ]
+
+# SAE #2
+ll_ser[SAE == "#2", `:=` (sae_kriterie = "Significant medical event, Foetal malformation",
+                          Description = paste("The participant conceives during the",
+                          "intervention phase of the trial. At inclusion, the participant",
+                          "received written information about the need for anticontraceptive",
+                          "measures, reported being on an oral anticontraceptive and had a",
+                          "negative human chorionic gonadotropin test. At gestational age",
+                          "20+6, foetal malformation is found on ultrasound. Abortion. At",
+                          "the time of conception, the participant was treated with",
+                          "several medications in addition to the trial product, including",
+                          "a tricyclic antidepressant with known teratogenicity.")
+                          )]
+
+#SAE #3
+ll_ser[SAE == "#3", `:=` (sae_kriterie = "Hospitalization",
+                          Description = paste("The participant is hospitalized on the",
+                          "last day of the trial intervention for a planned course of",
+                          "electroconvulsive therapy (ECT) due to treatment-refractory",
+                          "depression at the discretion of a non-trial medical doctor.",
+                          "Depression scores at baseline and time of admission are similar.")
+                          )]
+
+# SAE #4
+ll_ser[SAE == "#4", `:=` (sae_kriterie = "Prolonged hospitalization",
+                          Description = paste("During admission, the participant reports",
+                          "increased restlessness and agitation as well as thoughts of",
+                          "his own death to non-trial staff. Denies that the thoughts are",
+                          "suicidal or have characteristics of hallucinations. On day 5 of",
+                          "the intervention, non-trial staff decides to discontinue the",
+                          "trial product and prolong the participants hospitalization due",
+                          "to agitation and suspected psychosis. On the day 7 of the trial,",
+                          "a trial investigator finds no psychotic or manic symptoms present,",
+                          "in accordance with later evaluations by non-trial staff at the",
+                          "ward.")
+                          )]
+```
+
+Format data and make gt table object:
+```{r}
+# Format column names
+setnames(ll_ser, 
+         c("n_age", "c_sex","trt","meddra_pt","sae_kriterie", "investigator_relation"),
+         c("Age","Sex","Treatment","MedDRA Preferred Term", "SAE Criteria", "Relationship*"))
+
+# Make gt version of SAE line listings 
+ll_ser_gt <- gt(ll_ser) |> set_gt_style() |>
+  cols_align(align = "left", columns = everything()) |>
+  tab_style(
+    style = cell_text(v_align = "top"),
+    locations = cells_body(columns = everything())
+  )
+```
+
+Add footers:
+```{r}
+meddra_def <- paste("Adverse events are classified according to Medical Dictionary",
+                    "for Regulatory Activities (MedDRA, Version 29.0).")
+rel_def <- paste("\\* “Yes” is defined as a possible, probably or likely relationship",
+                 "between trial product and adverse event. “No” is defined as none", 
+                 "or an unlikely relationship.")
+
+ll_ser_footer <- list(
+  ser_def = ser_def,
+  meddra_def = meddra_def,
+  rel_def = rel_def,
+  abbrev = paste("M-F: Male to female transition.",
+                 "SAE: Serious adverse event")
+  )
+
+# Add footers to SAE table
+ll_ser_gt <- add_footer_lines_to_gt(ll_ser_gt, ll_ser_footer)
+ll_ser_gt
+```
+
+Save table:
+```{r}
+save_gt_table(ll_ser_gt, 
+              regi = tlf_reg[file_stem == "line_listing_SAE"], 
+              verbose = TRUE)
+```
+
+
+#### Line listings of adverse events leading to premature treatment discontinuation
+
+Add baseline data with data on AE leading to premature treatment discontinuation,
+select columns and format data:
+```{r}
+ll_aepm <- merge(de_prem, dbl[, .(ID, c_sex, n_age)], by = "ID")
+
+# Format age and sex variables
+ll_aepm[, n_age := round(as.numeric(n_age))]
+ll_aepm[, c_sex := substr(c_sex,1,1)]
+
+# Format investigator_relation levels
+stopifnot(ll_aepm[, levels(investigator_relation)] %in% c("Yes (possible, probable, certain)", 
+                                                          "No (none, unlikely)"))
+ll_aepm[, investigator_relation := ifelse(investigator_relation == "Yes (possible, probable, certain)", "Yes", "No")]
+
+# Add AE-PM identifier
+ll_aepm[, `AE-PM` := paste0("#", .I)]
+
+# Select columns
+ll_aepm <- ll_aepm[, .(`AE-PM`, n_age, c_sex, trt, meddra_pt, 
+                       investigator_relation)]
+
+# Ensure the AE-PM identifier maps to the correct AE-PM, using age (which is unique)
+# as the matching key
+stopifnot(nrow(ll_aepm) == 3,
+          nrow(ll_aepm[`AE-PM` == "#1" & n_age == 27]) == 1,
+          nrow(ll_aepm[`AE-PM` == "#2" & n_age == 22]) == 1,
+          nrow(ll_aepm[`AE-PM` == "#3" & n_age == 54]) == 1)
+
+```
+
+Add descriptions based on clinical notes:
+```{r}
+# AE-PM #1
+ll_aepm[`AE-PM` == "#1", `:=` (`Discontinued by` = "Medical doctor (investigator)",
+                               Description = paste("The participant reports discoloration",
+                               "of urine and three days of muscle soreness in proximal",
+                               "limbs and general unease. The trial product is discontinued",
+                               "due to suspension of myopathy on day 6. The day after",
+                               "discontinuation, blood tests were done. Creatine kinase,",
+                               "myoglobin, lactate dehydrogenase and aspartate aminotransferase",
+                               "were all within normal range and myopathy was ruled out.")
+                               )]
+
+# AE-PM #2
+ll_aepm[`AE-PM` == "#2", `:=` (`Discontinued by` = "Medical doctor (non-trial staff)",
+                               Description = paste("The trial product was discontinued on day",
+                               "5 of the intervention by a medical doctor at the in-patient",
+                               "ward to which the participant was admitted. Corresponds to",
+                               "SAE #4 (see “Details on Serious Adverse Events“)")
+                               )]
+
+# AE-PM #3
+ll_aepm[`AE-PM` == "#3", `:=` (`Discontinued by` = "Participant",
+                               Description = paste("After ingestion of the first two",
+                               "doses of the trial product, the participant reports",
+                               "increased irritability that results in an argument with",
+                               "a close family member. The participant classifies this",
+                               "behaviour as abnormal compared to her normal mental state.",
+                               "Decides to discontinue the trial product.")
+                               )]
+```
+
+Format and make gt table object:
+```{r}
+# Format column names
+setnames(ll_aepm, 
+         c("n_age", "c_sex","trt","meddra_pt", "investigator_relation"),
+         c("Age","Sex","Treatment","MedDRA Preferred Term", "Relationship*"))
+
+# Make gt version of AE-PM table
+ll_aepm_gt <- gt(ll_aepm) |> set_gt_style() |>
+  cols_align(align = "left", columns = everything()) |>
+  tab_style(
+    style = cell_text(v_align = "top"),
+    locations = cells_body(columns = everything())
+  )
+```
+
+Add footers:
+```{r}
+# Specify table footers
+ll_aepm_footer <- list(  
+  meddra_def = meddra_def,
+  rel_def = rel_def,
+  abbrev = "AE-PM: Adverse event leading to premature discontinuation of trial product")
+
+# Add footers to gt table
+ll_aepm_gt <- add_footer_lines_to_gt(ll_aepm_gt, ll_aepm_footer)
+ll_aepm_gt
+```
+
+Save gt table:
+```{r}
+save_gt_table(ll_aepm_gt, 
+              regi = tlf_reg[file_stem == "line_listing_premature_discontinuation"], 
+              verbose = TRUE)
+```
+
+
+## Admissions, suicide attempts and deaths
+
+Read data
+```{r}
+dads <- readRDS("02_data_derived/admissions_deaths_suicides_derived.rds")
+```
+
+Define footer list
+```{r}
+footer_list_admissions <- list(
+  scale = paste(
+  "A psychiatric emergency department visit followed by admission",
+  "is counted as two separate events. Suicide attempts are defined as non-fatal."),
+  abbrev = abbrev
+  )
+```
+
+
+#### Summary of admissions, suicide attempts and deaths by day 28
+
+```{r admissions_day28}
+# Make serious clinical events data.table
+adm_dt28 <- mk_outcome_dt(outcome_data = dads, day28 = TRUE)
+
+# Save data.table object
+saveRDS(adm_dt28, "50_output_db/outputs/serious_clinical_events_day28.rds")
+
+# Convert to gt and attach footers
+adm_gt28 <- mk_ae_gt(adm_dt28)
+adm_gt28 <- add_footer_lines_to_gt(adm_gt28, footer_list_admissions)
+adm_gt28
+
+# Save gt table
+save_gt_table(adm_gt28, 
+              regi = tlf_reg[file_stem == "serious_clinical_events"], 
+              verbose = TRUE)
+```
+
+Make version of the same table for OVERVIEW-part of TLF-book:
+```{r admissions_day28_overview}
+# Make footer with cross-ref to original table:
+footer_present <- 
+  paste0("Presentation is based on table: [-@sec-", 
+         tlf_reg[file_stem == "serious_clinical_events", endpoint_id], "]")
+footer_list_admissions_overview <- 
+  c(footer_list_admissions, list(present = footer_present))
+
+# Convert to gt and attach footers:
+adm_gt28_ov <- mk_ae_gt(adm_dt28) |>
+  add_footer_lines_to_gt(footer_list = footer_list_admissions_overview)
+adm_gt28_ov
+
+# Save gt table:
+save_gt_table(adm_gt28_ov,
+              regi = tlf_reg[file_stem == "serious_clinical_events_overview"],
+              verbose = TRUE)
+```
+
+
+## Appendix
+
+### **R** session info
+
+```{r}
+sessionInfo()
+```
+
+

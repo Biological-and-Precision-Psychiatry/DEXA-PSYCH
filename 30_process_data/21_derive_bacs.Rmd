@@ -1,0 +1,276 @@
+---
+title: "Derive BACS at baseline"
+author: "Rune Haubo B Christensen"
+date: "`r Sys.Date()`, original: 2026-03-25"
+output: 
+  html_document:
+    self_contained: yes    
+    toc: yes
+    toc_float: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup0, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+
+# wider output when knit'ing:
+if (isTRUE(getOption("knitr.in.progress")) && !knitr::is_latex_output()) {
+  options(width = 110)
+}
+```
+
+```{r setup, results='hide', message=FALSE}
+## load packages:
+library(data.table)
+library(arsenal)
+library(CRP)
+
+source("20_functions/source_dir.R")
+source_dir("20_functions")
+```
+
+## Read raw BACS data
+
+```{r}
+dtbacs <- readRDS(file = "02_data_derived/bacs_raw.rds")
+dtbacs <- dtbacs[n_target == 0]
+```
+
+Required columns and `part`s:
+```{r}
+required_col <- c("ID", "trt", "value", "part")
+required_part <- 
+  c("dansk", "farveblind", "venstrehand", "mem1", "mem2", "mem3", 
+    "mem4", "mem5", "talsekv_1", "talsekv_2", "talsekv_3", "talsekv_4", 
+    "talsekv_5", "talsekv_6", "talsekv_7", "talsekv_total", "token_bord", 
+    "token_beholder", "token_fejl", "token_total", "ordmob", "bogstavmob_f", 
+    "bogstavmob_s", "symnr", "tol")
+stopifnot(is.data.table(dtbacs))
+test_required(required_col, names(dtbacs))
+test_required(required_part, dtbacs[, unique(part)])
+```
+
+Cast `dtbacs` to wide format and show missing values:
+```{r}
+dbacs <- dcast(dtbacs, ID + trt ~ part, value.var = "value")
+show_na(dbacs)
+```
+
+Coerce categorical variables to factors:
+```{r}
+dbacs[, f_dansk := factor(fifelse(dansk == 0, "Nej", "Ja"))]
+dbacs[, f_farveblind := factor(fifelse(farveblind == 0, "Nej", "Ja"))]
+dbacs[, f_venstrehand := factor(fifelse(venstrehand == 0, "Nej", "Ja"))]
+dbacs[, `:=`(dansk       = NULL,
+             farveblind  = NULL,
+             venstrehand = NULL)]
+```
+
+Set parameters:
+```{r}
+# Variables names in bacs:
+nm <- names(dbacs)
+
+# Names for fluency and memory sub-items:
+#   PSYCH-FLAME: c("semantic", "letter_s", "letter_f")
+nm_fluency <- c("ordmob", "bogstavmob_s", "bogstavmob_f")
+nm_verbmem <- getgrep("^mem", nm)
+
+# Sub items:
+#   PSYCH-FLAME names:
+#   measure_vars <- 
+#     c("verbalmem1", "verbalmem2", "verbalmem3", "verbalmem4", "verbalmem5", 
+#       "digitseq", "token", "semantic", "letter_s", "letter_f", "coding", "tower")
+sub_items <- 
+  c(nm_verbmem, "talsekv_total", "token_total", nm_fluency, "symnr", "tol")
+
+# Items for checking missingness:
+#   PSYCH-FLAME items:
+#   items <- c("digitseq", "token", "coding", "tower", "miss_verbmem", "miss_fluency")
+miss_items <- c("talsekv_total", "token_total", "symnr", "tol", "miss_verbmem", 
+                "miss_fluency")
+
+# Items:
+#   PSYCH-FLAME names:
+#   measure_vars <- 
+#     c("verbmem", "digitseq", "token", "fluency", "coding", "tower")
+items <- 
+  c("verbmem", "talsekv_total", "token_total", "fluency", "symnr", "tol")
+
+# Identify treatment levels:  
+trt_levs <- get_trt_levs(dbacs)
+ref_trt_lev <- trt_levs[1] |> unname()
+dexa_trt_lev <- trt_levs[2] |> unname()
+```
+
+## Handle missingness
+
+1. Verbal memory is set to `NA` if a subject has 3 or more missing values among the verbal memory sub-scores
+1. Fluency is set to `NA` if a subject has 2 or more missing values among the verbal fluency sub-scores
+
+```{r}
+# number of missing sub-scores in verbal memory:
+dbacs[, miss_verbmem := rowSums(is.na(.SD)), .SDcols = nm_verbmem]
+# dbacs[, .N, miss_verbmem]
+dbacs[miss_verbmem >= 3, miss_verbmem := NA]
+# dbacs[, .N, miss_verbmem]
+
+# number of missing sub-scores in verbal fluency:
+dbacs[, miss_fluency := rowSums(is.na(.SD)), .SDcols = nm_fluency]
+dbacs[miss_fluency >= 2, miss_fluency := NA]
+# dbacs[, .N, miss_fluency]
+```
+
+We only use BACS scores if at most 1 item is missing. This is recorded in the variable `use_bacs`: 
+```{r}
+stopifnot(all(miss_items %in% names(dbacs)))
+dbacs[, nmiss_bacs := rowSums(is.na(.SD)), .SDcols = miss_items]
+# dbacs[, .N, nmiss_bacs]
+dbacs[, use_bacs := ifelse(nmiss_bacs <= 1, "yes", "no")]
+# dbacs[, .N, keyby=.(nmiss_bacs, use_bacs)]
+```
+
+## Tabulate raw BACS data
+
+```{r results='asis'}
+allvar <- setDiff(names(dbacs), c("ID", "trt"))
+form <- reformulate(allvar, "trt")
+
+ctr <- tableby.control(numeric.stats = c("Nmiss", "meansd", "medianrange"),
+                       cat.stats = c("Nmiss", "countpct"),
+                       stats.labels=list(Nmiss = "Missing", Nmiss2 = "Missing",
+                                         meansd = "Mean (SD)", range = "Range",
+                                         medianrange = "Median (Range)",
+                                         gmeansd = "Geom Mean (Geom SD)"),
+                       chisq.correct = FALSE, digits = 1, test.always = FALSE)
+
+tab <- tableby(form, data=dbacs, control=ctr, test=FALSE)
+
+if(interactive()) 
+  summary(tab, text = TRUE, term.name = TRUE, test=FALSE) 
+if(!interactive()) 
+  summary(tab, term.name = TRUE, test=FALSE)
+```
+
+## Standardized scores for the control group
+
+### First, get standardized scores for verbal memory and fluency items
+
+```{r}
+stopifnot(all(sub_items %in% names(dbacs)))
+dbacs2 <- melt(dbacs[use_bacs == "yes"], id.vars = c("ID", "trt"), 
+               measure.vars = sub_items,
+               variable.name = "test", value.name = "n_raw")
+dbacs2
+
+# Compute standardized scores for control group:
+dbacs_ctr <- dbacs2[trt == ref_trt_lev & !is.na(n_raw)]
+dbacs_ctr <- dbacs_ctr[, .(n_mean_ctr = mean(n_raw), 
+                           n_sd_ctr = sd(n_raw)), test]
+dbacs_ctr
+```
+
+Aggregate standardized scores for verbal memory and fluency items
+```{r}
+dbacs2 <- merge(dbacs2, dbacs_ctr, by="test")
+dbacs2[, n_std := (n_raw - n_mean_ctr) / n_sd_ctr]
+
+# Aggregate scores for verbal memory and fluency:
+dbacs3 <- dcast(dbacs2, ID + trt ~ test, value.var = "n_std")
+dbacs3[, verbmem := rowMeans(.SD, na.rm = TRUE), .SDcols = nm_verbmem]
+# sapply(dbacs3, function(x) sum(is.na(x)))
+# dbacs3[is.na(verbmem)]
+dbacs3[, fluency := rowMeans(.SD, na.rm = TRUE), .SDcols = nm_fluency]
+# cbind(sapply(dbacs3, function(x) sum(is.na(x))))
+```
+
+### Second, get standardized scores for all main items
+
+Compute standardized scores for control (placebo) group:
+```{r}
+stopifnot(all(items %in% names(dbacs3)))
+dbacs4 <- melt(dbacs3, id.vars = c("ID", "trt"), 
+               measure.vars = items,
+               variable.name = "test", value.name = "n_raw2")
+
+# Compute standardized scores for control group:
+dbacs_ctr2 <- dbacs4[trt == ref_trt_lev & !is.na(n_raw2)]
+dbacs_ctr2 <- dbacs_ctr2[, .(n_mean_ctr = mean(n_raw2), 
+                             n_sd_ctr = sd(n_raw2)), test]
+dbacs_ctr2
+```
+
+
+## Compute standardized BACS score for all subjects
+
+Compute standardized score for all subjects-by-items:
+```{r}
+dbacs4 <- merge(dbacs4, dbacs_ctr2, by = "test", all.x = TRUE)
+dbacs4[, n_std := (n_raw2 - n_mean_ctr) / n_sd_ctr]
+# cbind(sapply(dbacs4, function(x) sum(is.na(x))))
+dbacs4
+```
+
+Compute the average standardized score for each subject by averaging over items:
+```{r}
+dbacs5 <- dbacs4[, .(n_bacs = mean(n_std, na.rm = TRUE)), .(ID, trt)]
+```
+
+Make dataset including all subjects:
+```{r}
+dbacs6 <- merge(dbacs[, .(ID, trt, f_dansk, f_farveblind, f_venstrehand)], 
+                dbacs5, by=c("ID", "trt"), all.x = TRUE)
+dbacs6
+```
+
+Save final BACS dataset to file:
+```{r}
+saveRDS(dbacs6, file = "02_data_derived/bacs_derived.rds")
+```
+
+## Tabulate derived BACS data
+
+```{r results='asis'}
+allvar <- setDiff(names(dbacs6), c("ID", "trt"))
+form <- reformulate(allvar, "trt")
+
+tab <- tableby(form, data=dbacs6, control=ctr, test=FALSE)
+
+if(interactive()) 
+  summary(tab, text = TRUE, term.name = TRUE, test=FALSE) 
+if(!interactive()) 
+  summary(tab, term.name = TRUE, test=FALSE)
+```
+
+
+## Appendix
+
+### **R** session info
+
+```{r}
+sessionInfo()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

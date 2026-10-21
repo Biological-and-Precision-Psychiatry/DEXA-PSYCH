@@ -1,0 +1,655 @@
+---
+title: "Check derived data for DEXA-PSYCH"
+author: "Rune Haubo B Christensen, modified by Eva Nina Sparre Wandall"
+date: "`r Sys.Date()`, original: 2025-08-18"
+output: 
+  html_document:
+    self_contained: yes    
+    toc: yes
+    toc_float: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup0, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+
+# wider output when knit'ing:
+if (isTRUE(getOption("knitr.in.progress")) && !knitr::is_latex_output()) {
+  options(width = 110)
+}
+```
+
+```{r setup, results='hide', message=FALSE}
+## load packages:
+library(data.table)
+library(writexl)
+library(lubridate)
+library(arsenal)
+library(CRP)
+
+## Load functions:
+source("20_functions/source_dir.R")
+source_dir("20_functions")
+```
+
+
+## Read data 
+
+Read file compiled in `01_prepare_data.Rmd`:
+```{r}
+d0 <- get_derived_data()
+```
+
+Read file compiled in `11_derive_variables.Rmd`:
+```{r}
+adat <- get_analysis_data()
+```
+
+Read file compiled in `22_mk_baseline_data.Rmd`:
+```{r}
+# Baseline data
+dbl <- readRDS(file="02_data_derived/baselinedata.rds")
+```
+
+Read files compiled in `23_derive_adverse_events.Rmd`:
+```{r}
+# Adverse events data
+de <- readRDS(file = "02_data_derived/adverse_events_derived.rds")
+
+# Suicide attempts data
+ds <- readRDS("02_data_derived/suicides_by_visits_derived.rds")
+
+# Hospital contacts and deaths data
+dc <- readRDS("02_data_derived/admissions_derived.rds")
+```
+
+Read exception ID numbers:
+```{r}
+except <- readRDS(file = "02_data_derived/exceptions.rds")
+```
+
+
+## Checks on data from `01_prepare_data.Rmd`
+
+Check that all randomized subjects in full dataset has `ranmed_cmpl == "Complete"`:
+```{r}
+dd0 <- d0[c_visit == "day0" & !is.na(rand_id)]
+dd0[, max_rep_inst := max(rep_inst), ID]
+stopifnot(dd0[max_rep_inst == rep_inst, all(ranmed_cmpl == "Complete")])
+```
+
+Check multiple day 0 dates:
+```{r}
+d1 <- d0[c_visit == "day0" & 
+           variable %in% c("medicin_udl_dato", "forsoegsmedicin_startdato"),
+         .(ID, date = d_value, date_var = variable, rep_inst, rand_id)]
+d1[date_var == "forsoegsmedicin_startdato", 
+   `:=`(date_var = paste0(date_var, " -1"),
+        date = date -1)]
+
+d <- rbind(
+  unique(d0[c_visit == "day0", .(ID, date, date_var, rep_inst, rand_id)]),
+  unique(d1))
+
+setorder(d, ID, date, rep_inst)
+d[, max_rep_inst := max(rep_inst), ID]
+d[, no_dates := uniqueN(date), .(ID, rep_inst)]
+id_w_mult_day0 <- d[no_dates > 1 & rep_inst == max_rep_inst & !is.na(rand_id),
+                    sort(unique(ID))]
+
+# Expected subjects with multiple day0 dates:
+stopifnot(length(except$expected_id_w_mult_day0) == 2L)
+
+## Check that only 2 specific IDs have multiple day0 dates:
+if(!isTRUE(setequal(id_w_mult_day0, except$expected_id_w_mult_day0))) {
+  warning("Unexpected ID with multiple day0 dates")
+  ## Date trouble:
+  d_mult0 <- d[no_dates > 1 & rep_inst == max_rep_inst & !is.na(rand_id) &
+                    !ID %in% except$expected_id_w_mult_day0]
+  dlst <- split(d_mult0[, .(date_var = paste(date_var, collapse = ", ")), 
+                        by = setdiff(names(d_mult0), "date_var")], by="ID")
+  print(names(dlst))
+  write_xlsx(x=dlst, path = paste0("04_data_checks/", get_datetime_from_checksums(),
+                                   "_trouble_with_day0_dates.xlsx"))
+}
+```
+
+Check for multiple day 4, 7, 14, 28 or month 6 dates:
+```{r}
+dd <- unique(d0[!c_visit %in% c("screen", "deviations", "events"), 
+                .(ID, date, date_var, rep_inst, rand_id, c_visit)])
+setorder(dd, ID, c_visit, date, rep_inst)
+dd[, max_rep_inst := max(rep_inst), .(ID, c_visit)]
+dd[, no_dates := uniqueN(date), .(ID, rep_inst, c_visit)]
+
+## Check that only 3 specific ID has multiple dates (other visits than day0):
+##       'c_visit' != "day0".
+id_w_mult_days <- dd[no_dates > 1 & rep_inst == max_rep_inst & !is.na(rand_id) & 
+                       c_visit != "day0", sort(unique(ID))]
+stopifnot(length(except$expected_id_w_mult_days) == 3L)
+
+if(!isTRUE(setequal(id_w_mult_days, except$expected_id_w_mult_days))) {
+  warning("Unexpected ID with multiple dates for a visit")
+  d_mult_pbl <- dd[no_dates > 1 & rep_inst == max_rep_inst & !is.na(rand_id) &
+                    !ID %in% except$expected_id_w_mult_days & c_visit != "day0"]
+  dd_lst <- split(d_mult_pbl[, .(date_var = paste(date_var, collapse = ", ")), 
+                          by = setdiff(names(d_mult_pbl), "date_var")], by="ID")
+  print(names(dd_lst))
+  write_xlsx(x=dd_lst, path = 
+               paste0("04_data_checks/", get_datetime_from_checksums(),
+                      "_trouble_with_dates_post_bl_visits.xlsx"))
+}
+```
+
+
+## Checks on analysis data
+
+Check that all subject have compliance data
+```{r}
+## Check that we have compliance data on all subjects:
+did <- readRDS(file = "02_data_derived/day0_all_subjects.rds")
+all_id <- did$ID
+if(!isTRUE(setequal(adat[!is.na(i_on_treat) | 
+                         (f_visit == "day7" & d_today <= d_upr), 
+                         unique(ID)], 
+                    all_id))) {
+  warning("Not all subjects have compliance data")
+  ## Subjects without compliance data:
+  id_wo_compliance <- all_id[!all_id %in% adat[!is.na(i_on_treat), unique(ID)]]
+  id_wo_compliance
+}
+```
+
+Check that `c_on_treat == "NR"` for baseline and all visits at or after the day 14 visit:
+```{r}
+is_NR <- adat[n_target == 0 | n_target >= 14, 
+              isTRUE(all(!is.na(c_on_treat) & c_on_treat == "NR"))]
+if(!is_NR) warning("Not all 'c_on_treat' are 'NR'")
+```
+
+Check that `c_on_treat %in% c("yes", "no")` visits between baseline and day 7:
+```{r}
+is_yes_no <- adat[n_target > 0 & n_target < 14, 
+                  isTRUE(all(!is.na(c_on_treat) & c_on_treat %in% c("yes", "no")))]
+if(!is_yes_no) warning("Not all 'c_on_treat' are 'yes' or 'no'")
+```
+
+
+## Checks on baseline data
+
+Check that all subjects have SCAN diagnosis
+```{r}
+# Subject with missing SCAN diagnosis:
+missing_scan <- dbl[is.na(f_dep_recurrent), 
+                    .(ID, d_day0, dep_diagnose_scan, dep_diagnose_scan_melank)]
+
+if (nrow(missing_scan) != 0){
+  warning("Not all subjects have SCAN diagnosis")
+  missing_scan
+  write_xlsx(missing_scan, path = paste0("04_data_checks/", get_datetime_from_checksums(), 
+                                         "_missing_scan_diangosis.xlsx"))
+}
+```
+
+Check that no subjects have missing or negative duration of current depressive episode
+```{r}
+# Subjects with missing or negative duration of current dep episode:
+negative_duration  <- dbl[n_dep_current_duration_days < 1 | 
+                            is.na(n_dep_current_duration_days), 
+                          .(ID, screen_dato, dep_start, d_day0, n_dep_current_duration_days)]
+
+if (nrow(negative_duration) != 0){
+  warning("Subjects with negative or missing duration of current depressive episode")
+  negative_duration
+  write_xlsx(negative_duration, path = 
+               paste0("04_data_checks/", get_datetime_from_checksums(), 
+                      "_missing_duration_of_current_dep_episode.xlsx"))
+}
+```
+
+Check that no subjects have missing number of lifetime depressive episodes
+```{r}
+# Subjects with missing number of lifetime depressive episodes
+lifetime_dep <- dbl[is.na(n_dep_lifetime_episodes), 
+                    .(ID, dep_tidligere, dep_tidligere_antal)]
+
+if (nrow(lifetime_dep) != 0){
+  warning("Subjects with missing number of lifetime depressive episode")
+  lifetime_dep
+  write_xlsx(lifetime_dep, path = 
+               paste0("04_data_checks/", get_datetime_from_checksums(), 
+                      "_missing_no_lifetime_dep.xlsx"))
+}
+```
+
+Check that no subjects have missing number of previous pharmacological treatments
+```{r}
+# Subject with missing no. previous pharmacological treatments:
+prev_medicine <- dbl[antidep_tidligere_janej == "Ja" & is.na(antidep_tidligere_antal),
+    .(ID, antidep_tidligere_janej, antal_antidep, antidep_tidligere_antal, screen_dato, d_day0)]
+
+if (nrow(prev_medicine) != 0){
+  warning("Subjects with missing number of previous pharmacological treatments")
+  prev_medicine
+  write_xlsx(prev_medicine, path = paste0("04_data_checks/", get_datetime_from_checksums(), 
+                                         "_missing_prev_no_medicine.xlsx"))
+}
+```
+
+Check that no subjects have missing number of all-time pharmacological treatments:
+```{r}
+# Subjects with missing no. all-time pharmacological treatments:
+all_medicine <- dbl[is.na(antal_antidep_all), 
+    .(ID, antal_antidep_all, antidep_tidligere_janej, antal_antidep, 
+      antidep_tidligere_antal)]
+
+if (nrow(all_medicine) != 0){
+  warning("Subjects with missing number of all-time pharmacological treatments")
+  all_medicine
+  write_xlsx(all_medicine, path = 
+               paste0("04_data_checks/", get_datetime_from_checksums(), 
+                      "_missing_no_all_time_medicine.xlsx"))
+}
+```
+
+## Check all individuals have lab results data on day 0 or day 7
+```{r}
+# Data on lab results
+blood_data <- d0[category == "blod_data"]
+blood_data[, value := c_value]
+vital_data <- d0[category == "vital_data"]
+lab_data <- rbind(blood_data[, .(ID, variable, c_visit, value)], 
+                  vital_data[, .(ID, variable, c_visit, value)])
+lab_data <- lab_data[!variable %in% c("mens_janej","mens_start", "hcg")]
+
+# Extract missing data for a specific lab results and visit
+get_missing_lab_tests <- function(data, lab_test, visit = "day0"){
+  stopifnot(lab_test %in% data[, unique(variable)])
+  ids <- all_id[!all_id %in% 
+                  data[ID %in% all_id &  variable == lab_test & 
+                         c_visit == visit & !is.na(value), unique(ID)]]
+  res <- data.table(ID = ids, lab_test = lab_test, visit = visit)
+  res
+}
+
+# Missing lab results on day 0
+miss_lab_day0 <- rbindlist(lapply(lab_data[, unique(variable)], function(x) 
+  get_missing_lab_tests(data = lab_data, lab_test = x, visit = "day0")))
+write_xlsx(miss_lab_day0, path = 
+             paste0("04_data_checks/", get_datetime_from_checksums(), 
+                    "_missing_lab_results_day0.xlsx"))
+
+# Missing lab results on day 7
+miss_lab_day7 <- rbindlist(lapply(lab_data[, unique(variable)], function(x) 
+  get_missing_lab_tests(data = lab_data, lab_test = x, visit = "day7")))
+smiss_lab_day7 <- split(miss_lab_day7, by = "ID")
+write_xlsx(smiss_lab_day7, path = 
+             paste0("04_data_checks/", get_datetime_from_checksums(), 
+                    "_missing_lab_results_day7.xlsx"))
+```
+
+
+## Checks on adverse events data
+
+Check for invalid adverse event dates (Start date before day 0, end date before 
+start date, or start date more than 10 days after day 0, missing start or end date)
+```{r}
+invalid_start_dates <- de[startdato < d_day0 | slutdato_haendelse < startdato |
+                            as.numeric(startdato - d_day0) > 10 | 
+                            is.na(slutdato_haendelse) | is.na(startdato), 
+                          .(ID, haendelse, tekst, startdato, slutdato_haendelse, 
+                            d_day0, hndelsesregistrering_complete)]
+if (nrow(invalid_start_dates) > 0) {
+  warning("Subjects with invalid adverse events dates")
+  write_xlsx(invalid_start_dates, path = 
+               paste0("04_data_checks/", get_datetime_from_checksums(),
+                      "_invalid_adverse_event_dates.xlsx"))
+}
+```
+
+Flag events with missing column values
+```{r}
+# Columns to check
+check_cols <- c("investigator_alvorlighed", "gradering", "investigator_relation", 
+                "status", "handling", "meddra_pt", "meddra_organ")
+
+# Columns to return
+key_cols <- c("ID", "haendelse", "meddra_pt","meddra_organ", "startdato", 
+              "hndelsesregistrering_complete")
+
+# Rows with missing columns
+miss_reg <- lapply(check_cols, function(col) {
+  dt <- de[is.na(get(col)), ..key_cols]
+  dt[, missing := col]}) |> rbindlist() 
+
+# Collapse if more than one missing variable for the same adverse event
+miss_reg <- miss_reg[, .(missing = paste(missing, collapse = ", ")), 
+                     by = setdiff(names(miss_reg), "missing")]
+
+if (nrow(miss_reg) > 0) {
+  warning("Subjects with missing adverse event column values")
+  write_xlsx(miss_reg, 
+             path = paste0("04_data_checks/", get_datetime_from_checksums(),
+                           "_na_summary_adverse_events.xlsx"))
+}
+```
+
+Flag all unverified or incomplete adverse event registrations
+```{r}
+non_complete_events <- de[hndelsesregistrering_complete != "Complete", 
+                           .(ID, startdato, haendelse, tekst, hndelsesregistrering_complete)]
+if (nrow(non_complete_events) > 0) {
+  warning("Subjects with unverified or incomplete adverse event registration")
+  write_xlsx(non_complete_events, 
+             path = paste0("04_data_checks/", get_datetime_from_checksums(),
+                           "_non_complete_adverse_events.xlsx"))
+}
+```
+
+Flag all MedDRA preferred terms with more than one MedDRA system organ class:
+```{r}
+meddra_table <- de[, .(IDs = paste(unique(ID), collapse = ", ")), 
+                    by = .(meddra_organ, meddra_pt)]
+
+# Get the unique meddra_organ and IDs combinations per meddra_pt (preferred term)
+meddra_table <- unique(meddra_table[, .(meddra_pt, meddra_organ, IDs)])
+
+# Rank each meddra_organ entry within a meddra_pt group to generate column indices
+meddra_table[, col_idx := seq_len(.N), by = meddra_pt]
+
+if(meddra_table[, uniqueN(col_idx)] != 1) {
+  warning("Multiple MedDRA organ classes for a pt")
+  # Pivot meddra_organ values to wide format 
+  soc_wide_organ <- dcast(meddra_table, meddra_pt ~ paste0("meddra_organ_", col_idx), 
+                          value.var = "meddra_organ")
+
+  # Pivot IDs values to wide format
+  soc_wide_ids <- dcast(meddra_table, meddra_pt ~ paste0("meddra_organ_", col_idx, "_IDs"), 
+                        value.var = "IDs")
+
+  # Join the two wide tables together on meddra_pt
+  meddra_table <- soc_wide_organ[soc_wide_ids, on = "meddra_pt"]
+  meddra_table
+
+  write_xlsx(meddra_table[!is.na(meddra_pt)], 
+             path = paste0("04_data_checks/", get_datetime_from_checksums(),
+                           "_meddra_classifications.xlsx"))
+}
+```
+
+Flag individuals with more than one occurrence of the same MedDRA preferred term:
+```{r}
+# Find IDs with more than one event with the same level of meddra_pt
+ids_w_duplicate_pt <- de[!is.na(meddra_pt), .(dates = list(startdato), N = .N), 
+                          by = .(ID, meddra_pt)][N > 1]
+
+# Collapse dates to one string per ID/meddra_pt combination
+ids_w_duplicate_pt[, dates := sapply(dates, function(d) paste(sort(d), collapse = ", "))]
+
+if(nrow(ids_w_duplicate_pt) > 0) {
+  warning("Subjects with multiple occurences of the same MedDRA pt")
+  write_xlsx(ids_w_duplicate_pt, 
+             path = paste0("04_data_checks/", get_datetime_from_checksums(),
+                           "_ids_w_duplicate_meddra_pt.xlsx"))
+}
+```
+
+
+## Checks on admission, deaths and suicide attempts data
+
+### Suicide attempts data
+
+Flag inconsistent data
+```{r}
+# Check no subject have missing selvmord_outcome at a visit
+stopifnot(nrow(ds[is.na(selvmord_outcome) & !is.na(c_visit)]) == 0)
+
+
+# Check 1: selvmord_outcome != "Nej" but missing date, count and lethality
+check1 <- ds[selvmord_outcome != "Nej" & 
+                            (is.na(selvmord_outcome_dato) |
+                               is.na(selvmord_outcome_antal) |
+                               is.na(sevlmord_outcome_letalitet))]
+check1[, note := "selvmord_outcome is not 'Nej' but missing date and/or count"]
+
+# Check 2: selvmord_outcome == "Nej" but has date, count or lethality
+check2 <- ds[selvmord_outcome == "Nej" & 
+                            (!is.na(selvmord_outcome_dato) |
+                               !is.na(selvmord_outcome_antal) |
+                               !is.na(sevlmord_outcome_letalitet))]
+check2[, note := "selvmord_outcome is 'Nej' but has date and/or count"]
+
+# Check 3: d_day0 is after selvmord_outcome_dato
+check3 <- ds[d_day0 > selvmord_outcome_dato]
+check3[, note := "d_day0 > selvmord_outcome_dato"]
+
+# Combine all failing rows into one dataset
+suic_invalid_data <- rbind(check1, check2, check3)
+if(nrow(suic_invalid_data) > 0){
+  warning("Subjects with inconsistent data on suicide attempts")
+  write_xlsx(suic_invalid_data, path = 
+               paste0("04_data_checks/", get_datetime_from_checksums(),
+                      "_suicide_attempt_violations.xlsx"))
+}
+```
+
+Flag individuals with missing suicide attempt assessment at day 28
+```{r}
+missing_suic28 <- did[!ID %in% ds[c_visit %in% c("day28")]$ID]
+if(nrow(missing_suic28) > 0){
+  warning("Subjects with missing suicide attempt assessment at day 28")
+  write_xlsx(missing_suic28, path = 
+               paste0("04_data_checks/", get_datetime_from_checksums(), 
+                      "_missing_suicide_assessment_day28.xlsx"))
+}
+```
+
+### Admission and deaths data
+
+Ensure consistency of binary and count and date variables
+```{r}
+# Check date of first hospital contact date exists for all individuals with 
+# registered contact and binary indicator of admission matches count of admissions
+inc_pam <- dc[((pam_6mdr != "Nej" | pam_dag28 != "Nej") & is.na(pam_dato_1)) |
+                (pam_dag28 != "Ja" & pam_6mdr != "Ja" & pam_count > 0)][, 
+          .(ID, pam_dag28, pam_6mdr, pam_dato_1, pam_count)]
+
+inc_psyk <- dc[((indlagt_6mdr_psyk != "Nej" | indlagt_dag28_psyk != "Nej") & is.na(indlagt_psyk_start_1)) |
+                 (indlagt_dag28_psyk != "Ja" & indlagt_6mdr_psyk != "Ja" & psyk_count > 0)][, 
+          .(ID, indlagt_dag28_psyk, indlagt_6mdr_psyk, indlagt_psyk_start_1, psyk_count)]
+
+inc_soma <- dc[((indlagt_6mdr_soma != "Nej" | indlagt_dag28_soma != "Nej") & is.na(indlagt_soma_start_1)) |
+                 (indlagt_dag28_soma != "Ja" & indlagt_6mdr_soma != "Ja" & soma_count > 0)][, 
+          .(ID, indlagt_dag28_soma, indlagt_6mdr_soma, indlagt_soma_start_1, soma_count)]
+
+# Ensure that all death-related columns are non-missing for individuals with a 
+# registered death
+tmp <- dc[!is.na(doedsfald) | !is.na(type_doed) | !is.na(doedsaarsag) | !is.na(kommentar_doed)]
+inc_death <- tmp[apply(tmp[, .(doedsfald, type_doed, doedsaarsag, kommentar_doed)], 1, anyNA)][, 
+          .(ID, doedsfald, type_doed, doedsaarsag, kommentar_doed)]
+
+
+if (nrow(inc_pam) > 0 | nrow(inc_psyk) > 0| nrow(inc_soma) > 0 | nrow(inc_death) > 0){
+  warning("Subjects with inconsistent binary registration of admissions or death")
+  dt_list <- list(
+    PAM = inc_pam,
+    psychiatric_admissions = inc_psyk,
+    somatic_admissions = inc_soma,
+    death = inc_death
+  )
+  # Only keep data.tables with at least one row
+  dt_list <- dt_list[sapply(dt_list, nrow) > 0]
+  write_xlsx(dt_list, path = paste0("04_data_checks/", get_datetime_from_checksums(), 
+                      "_hospital_contacts_inconsistent_binary_registration.xlsx"))
+}
+```
+
+Flag all individuals with missing hospital contact data at day 28
+```{r}
+cnt_cols <- c("pam_dag28", "indlagt_dag28_psyk", "indlagt_dag28_soma")
+
+# No record in "Alle indlæggelser" or "Dødsfald"
+miss_cnt1 <- did[!ID %in% dc[, unique(ID)], .(ID, d_day0)]
+miss_cnt1[, missing := paste(cnt_cols, collapse = ", ")]
+
+# Partly missing data in "Alle indlæggelser"
+miss_cnt2 <- dc[is.na(pam_dag28) | is.na(indlagt_dag28_psyk) | is.na(indlagt_dag28_soma)]
+miss_cnt2[, missing := paste0(cnt_cols[c(is.na(pam_dag28), is.na(indlagt_dag28_psyk), 
+                                         is.na(indlagt_dag28_soma))], collapse = ", "), 
+          by = seq_len(nrow(miss_cnt2))]
+miss_cnt2 <- miss_cnt2[, .(ID, d_day0, missing)]
+
+# Combine and save
+miss_cnt <- rbind(miss_cnt1, miss_cnt2) |> setorder(d_day0)
+
+if (nrow(miss_cnt) > 0){
+  warning("Subjects with missing hospital contact assessment at day 28")
+  write_xlsx(miss_cnt, path = 
+               paste0("04_data_checks/", get_datetime_from_checksums(),
+                      "_missing_hospital_contact_asssessment_day28.xlsx"))
+}
+```
+
+Flag all individuals with violation of the order of hospital contact dates
+```{r}
+# Columns with all start dates of hospital contacts
+pam_cols <- grep("^pam_dato_", names(dc), value = TRUE)
+psyk_cols <- grep("^indlagt_psyk_start", names(dc), value = TRUE)
+soma_cols <- grep("^indlagt_soma_start", names(dc), value = TRUE)
+
+# Check date order for a single type of hospital contacts (PAM, inpatient psychiatric, 
+# or somatic admissions)
+check_date_order <- function(dt, cols) {
+  all_cols <- c("d_day0", cols)
+  
+  dt[, order_violations := {
+    viols <- c()
+    for (i in seq_len(length(all_cols) - 1)) {
+      if (!is.na(.SD[[all_cols[i + 1]]]) & .SD[[all_cols[i]]] > .SD[[all_cols[i + 1]]]) {
+        viols <- paste(c(viols, paste0(all_cols[i], " > ", all_cols[i + 1])), 
+                       collapse = ", ")
+      }
+    }
+    if (length(viols) == 0) NA_character_ else paste(viols, collapse = ", ")
+  }, by = seq_len(nrow(dt)), .SDcols = all_cols]
+  
+  dt[!is.na(order_violations)]
+}
+
+# Run check for all three types of hospital contacts and combine
+order_viols <- unique(rbind(check_date_order(dc, pam_cols),
+                                 check_date_order(dc, psyk_cols),
+                                 check_date_order(dc, soma_cols)))
+
+# Select relevant columns and collapse to one row per ID
+order_viols <- order_viols[, .SD, .SDcols = c("ID", "d_day0","order_violations",
+                                              pam_cols, psyk_cols, soma_cols)]
+order_viols <- order_viols[, .(order_violations = paste(order_violations, collapse = ", ")), 
+                                     by = c("ID", "d_day0", pam_cols, psyk_cols, soma_cols)]
+
+# Save violations
+if (nrow(order_viols) > 0){
+  warning("Subjects with impossible order of dates for hospital contacts")
+  write_xlsx(order_viols, path = 
+               paste0("04_data_checks/", get_datetime_from_checksums(),
+                      "_hospital_contact_date_order_violations.xlsx"))
+}
+```
+
+Flag hospital contact dates which are inconsistent with binary registration of 
+hospital contacts on day 28 or month 6
+```{r}
+# Check no individuals with hospital contact only at day 28 has first admission 
+# later than day 28
+viol1 <- dc[(pam_dag28 != "Nej" & pam_6mdr != "Ja") & 
+                           pam_dato_1 > d_day28]
+viol1[, note := "PAM visit registered before day 28, but date of first PAM visit is after day 28"]
+
+viol2 <- dc[(indlagt_dag28_psyk != "Nej" & indlagt_6mdr_psyk != "Ja") & 
+                           indlagt_psyk_start_1 > d_day28]
+viol2[, note := "Psychiatric visit registered before day 28, but date of first psychiatric visit is after day 28"]
+
+viol3 <- dc[(indlagt_dag28_soma != "Nej" & indlagt_6mdr_soma != "Ja") & 
+                           indlagt_soma_start_1 > d_day28]
+viol3[, note := "Somatic visit registered before day 28, but date of first somatic visit is after day 28"]
+
+# Check no individuals with hospital contact at month 6 but not at day 28 has a 
+# hospital contact before day 28
+viol4 <- dc[(pam_dag28 != "Ja" & pam_6mdr != "Nej") & 
+                           pam_dato_1 <= d_day28]
+viol4[, note := "PAM visit not registred at day 28, but date of first PAM visit is on or before day 28"]
+
+viol5 <- dc[(indlagt_dag28_psyk != "Ja" & indlagt_6mdr_psyk != "Nej") & 
+                           indlagt_psyk_start_1 <= d_day28]
+viol5[, note := "Psychiatric visit not registred at day 28, but date of first psychiatric visit is on or before day 28"]
+
+viol6 <- dc[(indlagt_dag28_soma != "Ja" & indlagt_6mdr_soma != "Nej") & 
+                           indlagt_soma_start_1 <= d_day28]
+viol6[, note := "Somatic visit not registred at day 28, but date of first somatic visit is on or before day 28"]
+
+
+viols <- rbind(viol1,viol2,viol3, viol4, viol5, viol6)
+viols <- viols[, .(ID, d_day0, d_day28, pam_dag28, pam_6mdr, pam_dato_1, 
+                   indlagt_dag28_psyk, indlagt_6mdr_psyk, indlagt_psyk_start_1, 
+                   indlagt_dag28_soma, indlagt_6mdr_soma, indlagt_soma_start_1, note)]
+
+if (nrow(viols) > 0){
+  warning("Subjects with inconsistent dates of hospital contacts")
+  write_xlsx(viols, path = paste0("04_data_checks/", get_datetime_from_checksums(),
+                                  "_hospital_contacts_inconsistent_dates.xlsx"))
+}
+```
+
+### Compare sources of admission data
+
+Ensure all admissions/deaths are registered in "Alle indlæggelser" and "Dødsfald"
+```{r}
+# Alle indlæggelser og dødsfald
+dc[, alle_indlaeggelser_og_doedsfald := paste0("n_PAM: ", pam_count,
+                                         "; n_indlagt_psyk: ", psyk_count,
+                                         "; n_indlagt_soma:", soma_count)]
+
+
+# Indlæggelser og selvmordsforsøg siden sidst
+psyk_adm <- ds[psyk_indl_outcome != "Nej" | selvmord_outcome != "Nej",
+                          .SD[1], by = .(ID, psyk_indl_outcome_start)]
+psyk_adm[, n_psyk := sum(as.numeric(psyk_indl_outcome_antal)), ID]
+psyk_adm[, n_suic := sum(as.numeric(selvmord_outcome_antal)), ID]
+psyk_adm[is.na(n_suic), n_suic := 0]
+psyk_adm[, indlaeggelser_og_selvmordsforsoeg_siden_sidst := 
+           paste0("n_indlagt_psyk: ", n_psyk, "; n_selvmordsforsoeg: ", n_suic)]
+
+# Hændelser
+sae_adm <- de[sae_kriterie == "Hospitalsindlæggelse eller forlængelse af hospitalsophold",
+              .SD[1], by = .(ID, startdato)]
+sae_adm[, n_haendelser := .N, ID]
+sae_adm[, haendelser := paste0("n_sae_hospitalsindlaeggelse: ", n_haendelser)]
+
+# Compare admission sources
+registred_psyk <- unique(merge(merge(psyk_adm[
+  , .(ID, indlaeggelser_og_selvmordsforsoeg_siden_sidst)],
+  dc[, .(ID, alle_indlaeggelser_og_doedsfald)], all = TRUE),
+  sae_adm[, .(ID, haendelser)], all = TRUE))
+
+if (nrow(registred_psyk[is.na(alle_indlaeggelser_og_doedsfald)]) > 0){
+  warning("Not all admissions registred in 'Alle indlæggelser'")
+  write_xlsx(registreret_psyk, path = 
+               paste0("04_data_checks/", get_datetime_from_checksums(), 
+                      "_registred_admissions_and_suicide_attempts.xlsx"))
+  }
+```
+
+
+## Appendix
+
+### **R** session info
+
+```{r}
+sessionInfo()
+```
+
+
+
+

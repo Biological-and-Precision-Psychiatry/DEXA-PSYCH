@@ -1,0 +1,107 @@
+---
+title: "Run Quarto to Produce TLF-Books"
+author: "Rune Haubo B Christensen"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup0, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+options(knitr.kable.NA = '')
+```
+
+```{r setup, results='hide', message=FALSE, warning=FALSE}
+library(quarto)
+library(data.table)
+
+source("20_functions/source_dir.R")
+source_dir("20_functions")
+
+tlf_reg <- get_metadata()
+do_print <- interactive()
+```
+
+
+## Compile Primary-Publication quarto book
+
+Generate `.qmd` chapter files and YML profile file:
+```{r pp_tlf_book}
+Book <- "pp"
+Bookdir <- paste0("60_tlf_book_", Book)
+if(dir.exists(Bookdir)) unlink(Bookdir, recursive = TRUE)
+mk_book_qmds(book    = Book, 
+             tlf_reg = tlf_reg,
+             verbose = do_print)
+
+mk_book_yml(book     = Book, 
+            subtitle = "Primary Publication",
+            tlf_reg  = tlf_reg)
+
+# Compile the quarto-book:
+quarto_render(input = "40_tlf_source", output_format = "html", profile = Book)
+```
+
+
+## Compile Clinical-Trial-Report quarto book
+
+Generate `.qmd` chapter files and YML profile file:
+```{r ctr_tlf_book}
+Book <- "ctr"
+Bookdir <- paste0("60_tlf_book_", Book)
+if(dir.exists(Bookdir)) unlink(Bookdir, recursive = TRUE)
+mk_book_qmds(book    = Book, 
+             tlf_reg = tlf_reg,
+             verbose = do_print)
+
+mk_book_yml(book     = Book, 
+            subtitle = "Clinical Trial Report",
+            tlf_reg  = tlf_reg)
+
+# Compile the quarto-book:
+quarto_render(input = "40_tlf_source", output_format = "html", profile = Book)
+```
+
+
+## Compile Full quarto book
+
+Generate `.qmd` chapter files and YML profile file:
+```{r full_tlf_book}
+Book <- "all"
+Bookdir <- paste0("60_tlf_book_", Book)
+if(dir.exists(Bookdir)) unlink(Bookdir, recursive = TRUE)
+mk_book_qmds(book    = Book, 
+            tlf_reg  = tlf_reg,
+             verbose = do_print)
+
+mk_book_yml(book     = Book, 
+            subtitle = "-Complete Book",
+            tlf_reg  = tlf_reg)
+
+# Compile the quarto-book:
+quarto_render(input = "40_tlf_source", output_format = "html", profile = Book)
+# quarto_render(input = "40_tlf_source", output_format = "pdf", profile = Book)
+```
+
+
+## Appendix
+
+### **R** session info
+
+```{r}
+sessionInfo()
+```
+
+
+
+
+
+
+
+
+

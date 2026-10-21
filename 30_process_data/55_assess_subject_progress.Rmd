@@ -1,0 +1,119 @@
+---
+title: "Subject progress"
+author: "Eva N. S. Wandall"
+date: "`r Sys.Date()`, original: 2026-03-30"
+output: 
+  html_document:
+    self_contained: yes    
+    toc: yes
+    toc_float: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup0, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+
+# wider output when knit'ing:
+if (isTRUE(getOption("knitr.in.progress")) && !knitr::is_latex_output()) {
+  options(width = 110)
+}
+```
+
+```{r setup, results='hide', message=FALSE}
+## load packages:
+library(data.table)
+library(writexl)
+library(arsenal)
+library(CRP)
+
+## Load functions:
+source("20_functions/source_dir.R")
+source_dir("20_functions")
+```
+
+
+## Read data
+
+Read data file produced by compiling `01_prepare_data.Rmd`
+```{r read_data}
+d0 <- get_derived_data()
+```
+
+Read data file produced by compiling `02_derive_variables.Rmd`
+```{r}
+analysis_data <- get_analysis_data()
+```
+
+
+## ID x date_var x c_visit recorded outside windows
+
+```{r visits_not_in_window}
+# Assign state for all observations of randomized individuals
+all_windows <- get_windows(data = d0[!is.na(rand_id)])
+all_windows <- merge(d0[, .(ID, c_visit, date, date_var)],
+                     all_windows)
+
+# Get one row per ID x date_var x c_visit (except day0) recorded outside window
+cols <- c("ID", "date", "date_var", "c_visit", "d_day0", "n_days_from_target","state")
+visits_not_in_window <- unique(
+  all_windows[, ..cols]
+  )[state == "outside_window" & c_visit != "day0"][, !'state']
+
+# Write to excel file
+setorder(visits_not_in_window, ID, c_visit, date)
+ll <- c(list("all"=visits_not_in_window), split(visits_not_in_window, by="ID"))
+write_xlsx(x=ll, path = paste0("04_data_checks/", get_datetime_from_checksums(),
+                               "_visits_not_in_window.xlsx"))
+head(visits_not_in_window)
+```
+
+
+## MADRS-10 subject progress
+
+Distribution of days from target on madras total10 ratings by visit:
+```{r madrs_windows}
+dt_madrs <- analysis_data[variable == "madrs" & part == "total10"]
+stopifnot(dt_madrs[, .N, .(ID, f_visit)][, all(N == 1)])
+
+split(
+  droplevels(dt_madrs[!is.na(date) & f_visit %in% c("day4","day7","day14","day28"),
+                      .N, keyby=.(f_visit, n_days_from_target,
+                                  in_window = 1*(state == "in_window"))]), 
+      by="f_visit"
+  )
+```
+
+Evaluate the visit window status of the MADRS-10 total score for all randomized 
+subjects across all visits.
+
+```{r mk_madrs_subject_progress}
+## Tabulate visit by state:
+tab <- dt_madrs[, .N, keyby=.(n_target, f_visit, has_no_date = 1*is.na(date), state)]
+tab
+
+# Split data by state
+setorder(dt_madrs, state, -n_target, n_days_from_target)
+split_data <- split(dt_madrs[, .(ID, f_visit, d_day0, trt, n_target,
+                                 d_target, d_lwr,d_upr, d_today, date,
+                                 state, n_days_from_target)], 
+                    by="state")
+
+
+## Save tables to file:
+write_xlsx(c(list(tab=tab), split_data),
+          path=paste0("04_data_checks/", get_datetime_from_checksums(), 
+                      "_status_for_all_visits.xlsx"))
+```
+
+
+## Appendix
+
+### **R** session info
+
+```{r}
+sessionInfo()
+```
+
+

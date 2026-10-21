@@ -1,0 +1,207 @@
+---
+title: "Baseline table"
+author: "Rune Haubo B Christensen"
+date: "`r Sys.Date()`, original: 2025-08-16"
+output: 
+  html_document:
+    self_contained: yes    
+    toc: yes
+    toc_float: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup0, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+
+# wider output when knit'ing:
+if (isTRUE(getOption("knitr.in.progress")) && !knitr::is_latex_output()) {
+  options(width = 110)
+}
+```
+
+```{r setup, results='hide', message=FALSE}
+## load packages:
+library(data.table)
+library(writexl)
+library(arsenal)
+library(CRP)
+library(gt)
+
+source("20_functions/source_dir.R")
+source_dir("20_functions")
+```
+
+## Read data
+
+```{r}
+dbl0 <- readRDS(file = "02_data_derived/baselinedata.rds")
+dbacs <- readRDS(file = "02_data_derived/bacs_derived.rds")
+dbl <- merge(dbl0, dbacs, by = c("ID", "trt"), all.x = TRUE)
+```
+
+
+## Baseline table
+
+```{r, results='asis'}
+ctr <- tableby.control(numeric.stats = c("Nmiss", "meansd", "medianrange"),
+                       cat.stats = c("Nmiss", "countpct"),
+                       stats.labels=list(Nmiss = "Missing", Nmiss2 = "Missing",
+                                         meansd = "Mean (SD)", range = "Range",
+                                         medianrange = "Median (Range)",
+                                         gmeansd = "Geom Mean (Geom SD)"),
+                       chisq.correct = FALSE, digits = 1, test.always = FALSE)
+
+tab <- tableby(trt ~ c_sex + n_age + f_age40 + f_race + 
+                 madrs_total10 + f_madrs10_30 + f_dep_recurrent + 
+                 n_dep_lifetime_episodes + f_dep_current_duration + 
+                 f_treatment_resistant + 
+                 f_psyk_aktuelt + f_antal_antidep_all + 
+                 f_cur_psychotherapy + f_prev_psychotherapy + 
+                 f_ambulant_indlagt + 
+                 f_somatic_comorbid + 
+                 n_bmi + f_bmi30 + 
+                 f_crp2 + 
+                 f_smoking + f_employment + 
+                 n_bacs, 
+               data=droplevels(dbl), control=ctr, test=FALSE)
+
+tab <- set_labels(tab, c(
+  c_sex                   = "Sex assigned at birth",
+  n_age                   = "Age (years)",
+  f_age40                 = "Age (distribution)",
+  f_race                  = "Race or ethnic group",
+  madrs_total10           = "MADRS~10~ at pre-treatment baseline",
+  f_madrs10_30            = "MADRS~10~ (distribution)",
+  f_dep_recurrent         = "Recurrent depressive episode",
+  n_dep_lifetime_episodes = "No. lifetime dep. episodes",
+  f_dep_current_duration  = "Duration of cur. dep. episode",
+  f_treatment_resistant   = "Treatment-resistant depression (TRD)",
+  f_somatic_comorbid      = "Comorbid somatic disorders",
+  n_bmi                   = "Body-mass index",
+  f_bmi30                 = "Body-mass index (distribution)",
+  f_crp2                  = "C-reactive protein (mg/L)",
+  f_smoking               = "Smoking status",
+  f_employment            = "Employment status",
+  n_bacs                  = "BACS score",
+  #
+  # f_antal_antidep_all     = "Different current or previous**\n**pharmacological treatments for depression",
+  f_antal_antidep_all     = "No. pharma. treatments for depression",
+  f_psyk_aktuelt          = "Comorbid psychiatric disorders",
+  f_cur_psychotherapy     = "Current use of psychotherapy",
+  f_prev_psychotherapy    = "Previous use of psychotherapy",
+  f_ambulant_indlagt      = "Current treatment setting"))
+
+# write2word(tab, file=paste0(getwd(), "/results/", Sys.Date(), 
+#                             "_baseline_characteristics_table1.docx"),
+#            quiet = TRUE)
+
+if(interactive()) 
+  summary(tab, text = TRUE, term.name = TRUE, test=FALSE) 
+if(!interactive()) 
+  summary(tab, term.name = TRUE, test=FALSE)
+```
+
+
+```{r}
+## Save baseline table to file:
+y <- as.data.frame(summary(tab, text=TRUE, term.name=TRUE, test=FALSE)) |>
+  as.data.table()
+nm <- names(y)[1]
+y[, (nm) := trimws(gsub("^\\-", "", get(nm)))]
+
+## Save baseline table:
+write_xlsx(y, path = paste0("02_data_derived/", 
+                            "baseline_characteristics_table1.xlsx"))
+```
+
+Make gt-table:
+```{r}
+y2 <- copy(y)
+# y2[, trt := gsub("**\n**", " ", trt, fixed = TRUE)]
+colnms <- names(y2)
+y2[nchar(get(colnms[2])) == 0, trt := paste0("**", trt, "**")]
+y2[, trt := gsub("<=", "\u2264", trt)]
+y2[, trt := gsub(">=", "\u2265", trt)]
+setnames(y2, "trt", "Treatment")
+
+gt_tab <- gt(y2) |> 
+  set_gt_style() 
+
+footer_list <- 
+  list(scale = "Randomly assigned participants received one-week oral dexamethasone or placebo as add-on therapy to standard therapy with anti-depressants. Percentages may not total 100 because of rounding.",
+       "Data are 'n (%)' unless otherwise specified.",
+       abbrev = paste(
+         "Race or ethnic group: Race or ethnic group as self-reported by the participants.",
+         "MADRS~10~: 10-item total score on the Montgomery-Åsberg Depression Rating Scale (MADRS) range from 0 to 60, with higher scores indicating greater severity of depression. At baseline, all patients had a score of at least 22 on the MADRS.",
+         "Depression severity: Moderate depression is defined as MADRS~10~ \u2264 29 and severe depression is defined as MADRS~10~ \u2265 30.",
+         "Treatment-resistant depression (TRD): Defined as two or more trials of different antidepressants within the current depressive episode.",
+         "Body-mass index: The weight in kilograms divided by the square of the height in meters.",
+         "BACS: Score on the Brief Assessment of Cognition test standardized to the trial population, with lower scores indicating lower cognitive functioning.",
+         "SD: Standard deviation", "C-reactive protein: high sensitivity C-reactive protein (unit: mg/L)"))
+
+for(footer in footer_list) {
+    gt_tab <- gt_tab |>
+      tab_source_note(source_note = md(as.character(footer)))
+  }
+
+tlf_reg <- get_metadata()
+regi <- tlf_reg[file_stem == "baseline_table"]
+
+save_gt_table(gt_tab, 
+              regi = regi, 
+              verbose = TRUE)
+gt_tab
+```
+
+
+## Baseline table for subgroups
+
+```{r, results='asis'}
+tab <- tableby(trt ~ sex + f_age40 + f_bmi30 + f_madrs10_30 + 
+                 f_treatment_resistant, data=droplevels(dbl), control=ctr,
+               test=FALSE)
+
+tab <- set_labels(tab, c(
+  sex = "Sex",
+  f_age40 = "Age",
+  f_bmi30 = "Body-mass index",
+  f_madrs10_30 = "Depression severity",
+  f_treatment_resistant = "Treatment-resistant"
+))
+
+# write2word(tab, file=paste0(getwd(), "/results/", Sys.Date(), 
+#                             "_baseline_characteristics_subgroups.docx"),
+#            quiet = TRUE)
+
+if(interactive()) 
+  summary(tab, text = TRUE, term.name = TRUE, test=FALSE) 
+if(!interactive()) 
+  summary(tab, term.name = TRUE, test=FALSE)
+```
+
+```{r}
+## Save baseline table to file:
+y <- as.data.frame(summary(tab, text=TRUE, term.name=TRUE, test=FALSE)) |>
+  as.data.table()
+nm <- names(y)[1]
+y[, (nm) := trimws(gsub("^\\-", "", get(nm)))]
+
+## Save baseline table:
+write_xlsx(y, path = paste0("02_data_derived/", 
+                            "baseline_characteristics_subgroups.xlsx"))
+```
+
+
+
+## Appendix
+
+### **R** session info
+
+```{r}
+sessionInfo()
+```
+
+
+

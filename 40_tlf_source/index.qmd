@@ -1,0 +1,184 @@
+---
+editor_options: 
+  chunk_output_type: console
+---
+# Welcome {.unnumbered}
+
+```{r}
+#| label: setup_index
+#| include: false
+library(gert)
+library(data.table)
+
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+```{r}
+#| label: setup_index2
+#| include: false
+
+source("20_functions/source_dir.R")
+source_dir("20_functions")
+```
+
+
+```{r}
+#| label: get_urls
+#| include: false
+
+# Get list of Git info:
+info <- gert::git_info()
+
+# Get github-url to repo:
+remotes      <- gert::git_remote_list()
+url          <- remotes$url[remotes$name == "origin"]
+url          <- gsub("\\.git$", "", url)
+pre_dbl_url  <- paste0(url, "/releases/tag/pre-dbl-v1.0")
+post_dbl_url <- paste0(url, "/releases/tag/post-dbl-v1.0")
+commit_url   <- paste0(url, "/tree/", info$commit)
+diff_url     <- paste0(url, "/compare/pre-dbl-v1.0...post-dbl-v1.0")
+citation_url <- paste0(url, "/blob/main/CITATION.cff")
+renvlock_url <- paste0(url, "/blob/main/renv.lock")
+
+# List registered DOIs:
+sap_doi     <- "https://doi.org/10.5281/zenodo.23343482"
+code_doi    <- "https://doi.org/10.5281/zenodo.23341773"
+tlf_pp_doi  <- "https://doi.org/10.5281/zenodo.23350243"
+tlf_ctr_doi <- "https://doi.org/10.5281/zenodo.23349388"
+
+doi_to_badge <- function(doi) 
+  paste0("[![DOI](https://zenodo.org/badge/DOI/", 
+                     gsub("https://doi.org/", "", doi, fixed = TRUE),
+                     ".svg)](", doi, ")")
+sap_badge     <- doi_to_badge(sap_doi)
+code_badge    <- doi_to_badge(code_doi)
+tlf_pp_badge  <- doi_to_badge(tlf_pp_doi)
+tlf_ctr_badge <- doi_to_badge(tlf_ctr_doi)
+
+```
+
+
+This Quarto book contains tables, listings and figures for statistical analyses of the DEXA-PSYCH trial. 
+All outcomes are reported from day 0 to day 28. Long term follow-up (until 6 months after baseline) will be presented separately.
+
+The DEXA-PSYCH trial has EU Trial registration number [2022-501428-45-00](https://euclinicaltrials.eu/ctis-public/view/2022-501428-45-00?lang=en) with WHO universal Trial Identifier U1111-1280-7614.
+
+The Trial protocol is available [here](https://euclinicaltrials.eu/ctis-public/view/2022-501428-45-00?lang=en) in its latest version and an earlier version is presented in [Rømer et al (2025)](https://doi.org/10.1186/s13063-025-08989-2)
+
+The Statistical Analysis Plan (SAP) was archived and locked in a persistent and immutable [Zenodo DOI](`r sap_doi`) prior to unblinding of the randomization list. The time of unblinding coincides with locking of the database and is called *database lock* (DBL).
+
+All analysis code is openly available at the github repository <`r url`>. 
+The code is released in two versions: 
+[pre-dbl-v1.0](`r pre_dbl_url`) and [post-dbl-v1.0](`r post_dbl_url`). 
+Each version is archived in Zenodo [DOIs](`r code_doi`) and any differences between the two version of the code base is documented. For further information see the traceability section below.
+
+
+This TLF-book is produced in two versions:
+
+1. Primary Publication: 
+This version documents all summaries and statistical analyses for safety and efficacy endpoints presented in the primary publication as documented in the SAP and trial protocol. This version is archived in a Zenodo DOI [here](`r tlf_pp_doi`).
+1. Clinical Trial Protocol (CTR): This version includes all content reported in the primary publication version but also presents results for additional secondary outcomes. Contents for the secondary outcomes will be released upon publication of secondary papers presenting the additional secondary outcomes. This version of the TLF-book is archived in a Zenodo DOI [here](`r tlf_ctr_doi`).
+<!-- 1. Internal: This version is an extension of the CTR book including various additional outputs used for quality control. This version is not publicly available. -->
+
+::: {.content-visible when-profile="pp"}
+You are currently reading the *Primary Publication* version of the TLF-book.
+:::
+
+::: {.content-visible when-profile="ctr"}
+You are currently reading the *Clinical Trial Report* version of the TLF-book.
+:::
+
+::: {.content-visible when-profile="all"}
+You are currently reading an *Internal* version of the TLF-book.
+:::
+
+## Organization of the book
+
+This book is organized in four parts:
+
+- OVERVIEW: 
+  - Describes patient inclusion, characteristics, and retention and treatment persistence during the trial. It also illustrates and summarizes results of analyses performed in the following parts of the book.
+- POLICY ESTIMAND 
+  - Contains all summary tabulations, statistical analysis tables and figures for the treatment policy (primary) estimand.
+- EFFICACY ESTIMAND: 
+  - Contains all summary tabulations, statistical analyses tables and figures for the treatment efficacy (secondary) estimand.
+- SAFETY 
+  - Contains all statistical analysis tables and figures for safety endpoints, tabulations of adverse events, and listings of events of particular interest.
+  
+
+## Traceability  
+
+```{r}
+#| label: traceability
+#| echo: false
+#| include: false
+
+# Get tags for releases (pre- and post-dbl):
+tags <- gert::git_tag_list()
+tag_here <- "none"
+if(nrow(tags) > 0) tag_here <- tags$name[tags$commit == info$commit]
+
+# Get checksums for REDCap .csv and .R files:
+path2checksums <- "03_checksums"
+fns_sha <- list.files(path2checksums, full.names = TRUE)
+is_csv <- grepl("csv\\.sha256$", fns_sha)
+
+quarto_v <- as.character(quarto::quarto_version())
+pandoc_v <- as.character(rmarkdown::pandoc_version())
+
+# R session info:
+sinfo <- sessionInfo()
+```
+
+- Code base repository: <`r url`>
+- Pre-dbl release: [pre-dbl-v1.0](`r pre_dbl_url`) 
+- Post-dbl release: [post-dbl-v1.0](`r post_dbl_url`) 
+- Git commit SHA for this book: ``r info$commit``
+- Git tag for that commit: ``r tag_here``
+- Git branch: ``r info$shorthand``
+- Build time of this TLF-book: `r format(Sys.time(), tz = "CET", "%Y-%m-%d %H:%M:%S Central European Time")`
+- Raw data SHA checksums:
+  - REDCap `.csv`  file name: ``r gsub("\\.sha256$", "", basename(fns_sha[is_csv]))``
+  - REDCap `.csv` checksum:  ``r readLines(con = fns_sha[is_csv])``
+  - REDCap `.r` file name: ``r gsub("\\.sha256$", "", basename(fns_sha[!is_csv]))``
+  - REDCap `.r` checksum:  ``r readLines(con = fns_sha[!is_csv])``
+- Zenodo archive of the code base: `r code_badge` 
+- Zenodo archive of the Statistical Analysis Plan: `r sap_badge`
+- Zenodo archive of the primary publication version of the TLF book: `r tlf_pp_badge`
+- Zenodo archive of the Clinical Trial Report version of the TLF book: `r tlf_ctr_badge`
+
+This report was generated by the analysis code uniquely identified by the Git commit SHA given in the list above. 
+To access this exact version of the code base open [this Github page accessing the code at that specific commit SHA](`r commit_url`).
+
+Any differences in the code base between the releases 
+[pre-dbl-v1.0](`r pre_dbl_url`) and [post-dbl-v1.0](`r post_dbl_url`) is documented in the 
+[code base DOI](`r code_doi`) and also available via the 
+[online Github compare function](`r diff_url`).
+
+Trial data were captured using [REDCap](https://project-redcap.org) electronic data capture tools hosted at [The Capital Region of Denmark](https://redcap.regionh.dk/). REDCap (Research Electronic Data Capture) provides audit trails for tracking data manipulation with complete log-files stored on secure electronic and physical drives.
+
+The raw trial data exported from REDCap in the form of a `.csv` file and an `.r` file are held on a secure drive and are not publicly available due to data privacy restrictions. The checksums listed above allow an authorized auditor with access to the data to confirm that the same files were used.
+
+### Computing environment
+
+The following list describes the computing environment that produced this Quarto book:
+
+- `r gsub("R", "[R](https://www.r-project.org/)", R.version.string)`
+- Platform: ``r sinfo$platform``
+- Running under: ``r sinfo$running``
+- [Quarto](https://quarto.org/) version: ``r quarto_v``
+- [Pandoc](https://pandoc.org/) version: ``r pandoc_v``
+
+The repository is equipped with an [`renv.lock`](`r renvlock_url`)-file which makes the **R**-package environment reproducible by capturing all versions and inter-dependencies. To re-create the **R** environment used to produce this book, 
+[clone](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository?tool=desktop) 
+the [repository](`r url`), open [R](https://www.r-project.org/) and run `renv::restore()`. 
+For further information see [the renv package homepage](https://rstudio.github.io/renv/).
+
+
+## How to cite this work 
+
+For citation in published works, please use the relevant DOI(s) listed above and the citation information available in each of them. 
+The code base repository also has citation information available in a [CITATION.cff file](`r citation_url`). 
+A link to the primary publication is provided in the GitHub repository [here](`r url`) and also linked to in the meta data of the DOIs provided above. 
+Because this book is compiled prior to release of the  primary publication a direct link cannot be included in this book.
+

@@ -1,0 +1,316 @@
+---
+title: "Derive data on adverse events, admissions and suicides"
+author: "Eva Nina S Wandall"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+editor_options:
+  chunk_output_type: console
+---
+
+
+```{r setup0, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.retina = 4)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+options(knitr.kable.NA = '')
+
+# wider output when knit'ing:
+if (isTRUE(getOption("knitr.in.progress")) && !knitr::is_latex_output()) {
+  options(width = 110)
+}
+```
+
+```{r setup, results='hide', message=FALSE, warning=FALSE}
+library(data.table)
+library(CRP)
+library(gt)
+library(arsenal)
+
+source("20_functions/source_dir.R")
+source_dir("20_functions")
+```
+
+# Adverse events
+
+### Read and clean data
+
+Read data
+```{r}
+dl2 <- readRDS(file="02_data_derived/all_data_by_visit.rds")
+de <- dl2$events
+```
+
+Read exception ID numbers:
+```{r}
+except <- readRDS(file = "02_data_derived/exceptions.rds")
+```
+
+Remove prefixed "haendelse_" and "handelse
+```{r}
+setnames(de, function(x) gsub("haendelse_|handelse_", "", x))
+```
+
+Remove incorrect registration of starting date on one participant:
+```{r}
+incor_startd <- as.integer(except$incorrect_startdato)
+stopifnot(length(incor_startd) == 1)
+de <- de[!(is.na(startdato) & ID %in% incor_startd)]
+```
+
+Fix typos in MedDRA classifications:
+```{r}
+de[meddra_pt == "decreased  appetite",                      meddra_pt := "Decreased appetite"]
+de[meddra_pt == "Dizziness ",                               meddra_pt := "Dizziness"]
+de[meddra_pt %in% c("feeling  jittery", "feeling jittery"), meddra_pt := "Feeling jittery"]
+de[meddra_pt %in% c("Hot flushes", "hot flush"),            meddra_pt := "Hot flush"]
+de[meddra_pt == "palpitations",                             meddra_pt := "Palpitations"]
+```
+
+Add variables: `d_day0`, `SAS`, `trt`
+```{r}
+de[, date := startdato]
+de2 <- add_derived_data(de)
+de2[, date := NULL]
+de2[, d_day28 := d_day0 + 28]
+```
+
+### Derive length of adverse event
+
+```{r}
+# Length of adverse event
+de2[, d_length := as.numeric(slutdato_haendelse - startdato) + 1]
+de2[d_length %in% 1:2, f_length := "1-2 days"]
+de2[d_length %in% 3:5, f_length := "3-5 days"]
+de2[d_length %in% 6:9, f_length := "6-9 days"]
+de2[d_length %in% 10:14, f_length := "10-14 days"]
+de2[d_length > 14 | (is.na(slutdato_haendelse) & 
+                     status == "Igangværende" & 
+                     (as.numeric(d_day28 - startdato) +1) > 14), 
+    f_length := "More than 14 days"]
+```
+
+
+### Convert variables to factors
+
+```{r}
+# Serious
+de2[, investigator_alvorlighed := factor(investigator_alvorlighed, 
+                                         levels = c("Ja", "Nej"),
+                                         labels = c("Yes", "No"))]
+
+# Severity
+de2[, gradering := factor(gradering,
+                          levels = levels(gradering),
+                          labels = c("Mild", "Moderate", "Severe",
+                                     "Life-threatening", "Fatal"))]
+
+# Relationship to trial product
+de2[, investigator_relation := factor(investigator_relation, 
+                                      levels = c("Ja (mulig, sandsynlig, sikker)",
+                                                 "Nej (ingen, usandsynlig)"),
+                                      labels = c("Yes (possible, probable, certain)", 
+                                                 "No (none, unlikely)"))]
+
+# Leading to premature discontinuation of trial product
+de2[, handling := factor(handling, 
+                         levels = c("Stoppet", "Ingen"),
+                         labels = c("Yes", "No"))]
+
+# Length of adverse event
+de2[, f_length := factor(f_length, 
+                         levels = c("1-2 days", "3-5 days", "6-9 days",
+                                    "10-14 days", "More than 14 days"))]
+```
+
+Save derived adverse events data
+```{r}
+saveRDS(de2, file = "02_data_derived/adverse_events_derived.rds")
+```
+
+# Admissions, deaths and suicide attempts
+
+## Admissions and deaths
+
+### Read and prepare data
+
+Extract data from "Alle indlæggelser" and "Dødsfald" for randomized individuals:
+```{r}
+dl2 <- readRDS(file="02_data_derived/all_data_by_visit.rds")
+rand_id <- readRDS(file = "02_data_derived/all_subject_ids.rds")[!is.na(rand_id)]$ID
+
+# Only data from randomized individuals
+dc <- dl2$conclusion[ID %in% rand_id]
+stopifnot(nrow(dc[, uniqueN(ID)]) ==nrow(dc))
+```
+
+Extract variables of interest:
+```{r}
+death_cols <- c("ID", "doedsfald", "type_doed", "doedsaarsag", "kommentar_doed", 
+                "ddsfald_complete")
+adm_cols <- grep("^indlagt|pam", names(dc), value = TRUE)
+cols <- c(death_cols, adm_cols)
+
+dc2 <- dc[, .SD, .SDcols = cols]
+```
+
+Add variables: `trt`, `d_day0`, `d_day28` and `c_SAS`:
+```{r}
+dc2[, date := pam_dato_1]
+dc2 <- add_derived_data(dc2)
+dc2[, date := NULL]
+dc2[, d_day28 := d_day0 + 28]
+```
+
+
+### Derive hospital contacts variables
+
+Columns with start dates of hospital contacts:
+```{r}
+# Columns related to PAM contacts:
+pam_cols <- grep("^pam_dato_", names(dc2), value = TRUE)
+# Columns related to psychiatric inpatient admissions:
+psyk_cols <- grep("^indlagt_psyk_start", names(dc2), value = TRUE)
+# Columns related to somatic admissions:
+soma_cols <- grep("^indlagt_soma_start", names(dc2), value = TRUE)
+```
+
+Count PAM contacts in total and at day 28:
+```{r}
+dc2[, pam_count := rowSums(!is.na(.SD)), .SDcols = pam_cols]
+dc2[, pam_count28 := rowSums(mapply(function(col) col <= d_day28, .SD),
+                                na.rm = TRUE), .SDcols = pam_cols]
+```
+
+Count psychiatric inpatient admissions in total and at day 28:
+```{r}
+dc2[, psyk_count := rowSums(!is.na(.SD)), .SDcols = psyk_cols]
+dc2[, psyk_count28 := rowSums(mapply(function(col) col <= d_day28, .SD),
+                                na.rm = TRUE), .SDcols = psyk_cols]
+```
+
+Count somatic admissions in total and at day 28:
+```{r}
+# Somatic admissions
+dc2[, soma_count := rowSums(!is.na(.SD)), .SDcols = soma_cols]
+dc2[, soma_count28 := rowSums(mapply(function(col) col <= d_day28, .SD),
+                                na.rm = TRUE), .SDcols = soma_cols]
+```
+
+Count all hospital contacts in total and at day 28:
+```{r}
+dc2[, hc_count := rowSums(.SD, na.rm = TRUE), .SDcols = c("pam_count", "psyk_count", "soma_count")]
+dc2[, hc_count28 := rowSums(.SD, na.rm = TRUE), .SDcols = c("pam_count28", "psyk_count28", "soma_count28")]
+```
+
+
+### Derive death related variables 
+
+Create binary variables indicating death during follow-up and by day 28:
+```{r}
+dc2[, death := ifelse(!is.na(doedsfald), 1, 0)]
+dc2[, death28 := ifelse(!is.na(doedsfald) & doedsfald <= d_day28, 1, 0)]
+```
+
+Create factor variable for reason of death during follow-up and by day 28:
+```{r}
+dc2[, type_doed := factor(type_doed,
+                          levels = c("Ulykke",
+                                     "Selvmord",
+                                     "Somatisk sygdom",
+                                     "Ukendt"),
+                          labels = c("Accident",
+                                     "Suicide",
+                                     "Somatic illness",
+                                     "Unknown"))]
+
+dc2[, type_doed28 := factor(
+  ifelse(death28 == 1, as.character(type_doed), NA),
+  levels = levels(type_doed)
+)]
+```
+
+Save derived admissions and deaths data:
+```{r}
+saveRDS(dc2, "02_data_derived/admissions_derived.rds")
+```
+
+
+## Suicide attempts
+
+### Read and format data on suicide attempts
+
+Extract data from "indlæggelser og selvmordsforsøg siden sidst":
+```{r}
+data_by_category <- readRDS(file="02_data_derived/data_by_category.rds")
+ds <- data_by_category$adm_data
+```
+
+Pivot data to wide format:
+```{r}
+ds2 <- dcast(ds, ID + c_visit + date ~ orig, value.var = "c_value")
+```
+
+Add `d_day0`, `d_day28`, `c_SAS` and `trt`:
+```{r}
+ds3 <- add_derived_data(ds2)
+stopifnot(nrow(ds3[is.na(d_day0)]) == 0)
+ds3[, d_day28 := d_day0 + 28]
+```
+
+Convert number of suicide attempts to numeric:
+```{r}
+ds3[, selvmord_outcome_antal := as.numeric(selvmord_outcome_antal)]
+```
+
+Ensure no individuals has missing day 28 assessment and more than one suicide 
+attempt at month 6: 
+```{r}
+ds3[, i_day28  := any(c_visit == "day28"), by = ID]
+stopifnot(nrow(ds3[i_day28 == FALSE & c_visit == "month6" & selvmord_outcome_antal > 1]) == 0)
+```
+
+Save data on suicide attempts by visit: 
+```{r}
+saveRDS(ds3, "02_data_derived/suicides_by_visits_derived.rds")
+```
+
+
+## Combine data on admissions, deaths and suicide 
+
+Count suicide attempts during follow-up and by day 28: 
+```{r}
+ds4 <- ds3[, .(
+  suic_count   = sum(selvmord_outcome_antal, na.rm = TRUE),
+  suic_count28 = sum(selvmord_outcome_antal[!is.na(selvmord_outcome_dato) & 
+                                                 selvmord_outcome_dato <= d_day28], 
+                     na.rm = TRUE)
+  ), by = c("ID", "d_day28")]
+```
+
+Merge admissions, deaths and suicide attempts data: 
+```{r}
+dads <- merge(dc2[, .(ID, c_SAS, trt, death, death28, type_doed, type_doed28,
+                                   hc_count, hc_count28,pam_count, pam_count28, psyk_count, 
+                                   psyk_count28, soma_count, soma_count28)], 
+              ds4[, .(ID, suic_count, suic_count28)],
+              by = c("ID"))
+```
+
+Save derived data on admissions, suicide attempts and deaths:
+```{r}
+saveRDS(dads, "02_data_derived/admissions_deaths_suicides_derived.rds")
+```
+
+
+
+## Appendix
+
+### **R** session info
+
+```{r}
+sessionInfo()
+```
+
+

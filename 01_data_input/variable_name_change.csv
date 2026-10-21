@@ -1,0 +1,15 @@
+﻿old_name;new_name
+rec_id;ID
+koen_biologisk;sex
+facitf_totalscore;facitf_total
+date_facitf;dato_facitf
+madrs_total_dag4;madrs10_total_dag4
+madrs_tot6_dag4;madrs6_total_dag4
+madrs_total_dag14;madrs10_total_dag14
+madrs_tot6_dag14;madrs6_total_dag14
+madrs_dag_4_complete;madrs_dag4_complete
+madrs_dag_14_complete;madrs_dag14_complete
+kommentarer_gti;gti_kommentarer
+kommentarer_fag;gaf_kommentarer
+ccsrs_antal_selvmordsforsoeg;cssrs_antal_selvmordsforsoeg
+kommentarer_uku;uku_kommentarer

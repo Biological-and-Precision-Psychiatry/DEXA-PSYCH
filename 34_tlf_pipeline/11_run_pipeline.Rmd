@@ -1,0 +1,134 @@
+---
+title: "Run Pipeline"
+author: "Rune Haubo B Christensen"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup0, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.retina = 4)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+options(knitr.kable.NA = '')
+```
+
+```{r setup, results='hide', message=FALSE, warning=FALSE}
+library(data.table)
+library(mmrm)
+library(emmeans)
+library(exact2x2)
+library(CRP)
+library(gt)
+library(quarto)
+library(ggplot2)
+library(ggtext)
+library(ggsci)
+library(cowplot)
+library(survival)
+library(forestploter) # for forest plots
+library(grid)
+library(katex)
+
+source("20_functions/source_dir.R")
+source_dir("20_functions")
+```
+
+
+## Generate tables and figures
+
+Generate all auto_tables and auto_figures with statistical results:
+```{r make_all_auto}
+# Settings:
+do_print <- interactive()
+tlf_reg <- get_metadata()
+
+# All combination of chapter and estimand that need processing:
+cases <- tlf_reg[estimand != "intro" & grepl("auto", folder), 
+                 .(estimand = unique(estimand), N = .N), .(chapter)]
+chapters <- cases[, unique(chapter)]
+
+## Generate all tables and figures for each chapter:
+tmp <- lapply(chapters, function(ch) { # ch <- chapters[3]
+  mk_tlf_ch(chapter   = ch,
+            estimands = cases[chapter == ch, estimand], 
+            tlf_reg   = tlf_reg,
+            set       = "auto",
+            verbose   = do_print)
+})
+```
+
+
+
+
+```{r run_all_analyses, eval=FALSE, include=FALSE}
+# For manual processing:
+
+# do_print <- FALSE
+# do_print <- TRUE
+mk_tlf_ch("madrs_total10", estimands = c("policy", "efficacy"), verbose = do_print)
+mk_tlf_ch("hamd_total17",  estimands = c("policy", "efficacy"), verbose = do_print)
+mk_tlf_ch("mdi_total",     estimands = c("policy", "efficacy"), verbose = do_print)
+mk_tlf_ch("madrs_total6",  estimands = c("policy", "efficacy"), verbose = do_print)
+mk_tlf_ch("hamd_total6",   estimands = c("policy", "efficacy"), verbose = do_print)
+mk_tlf_ch("hama_total",    estimands = c("policy", "efficacy"), verbose = do_print)
+mk_tlf_ch("gaf_gaf",       estimands = c("policy", "efficacy"), verbose = do_print)
+mk_tlf_ch("facitf_total",  estimands = c("policy", "efficacy"), verbose = do_print)
+mk_tlf_ch("EQ-5D-5L",      estimands = c("policy", "efficacy"), verbose = do_print)
+mk_tlf_ch("saps_total",    estimands = c("safety"),             verbose = do_print)
+mk_tlf_ch("gti_total",     estimands = c("safety"),             verbose = do_print)
+mk_tlf_ch("ymrs_total",    estimands = c("safety"),             verbose = do_print)
+mk_tlf_ch("C-SSRS",        estimands = c("safety"),             verbose = do_print)
+mk_tlf_ch("vital signs",   estimands = c("safety"),             verbose = do_print)
+mk_tlf_ch("biochemistry",  estimands = c("safety"),             verbose = do_print)
+
+
+mk_tlf_ch("madrs_total10", estimands = c("policy"), verbose = do_print)
+mk_tlf_ch("madrs_total10", estimands = c("efficacy"), verbose = do_print)
+```
+
+```{r include=FALSE, eval=FALSE}
+# Compile a chapter:
+quarto_render("40_tlf_source/index.qmd", output_format = "html")
+quarto_render("40_tlf_source/generated/EQ-5D-5L_policy.qmd", output_format = "html")
+quarto_render("40_tlf_source/generated/EQ-5D-5L_efficacy.qmd", output_format = "html")
+quarto_render("40_tlf_source/generated/C-SSRS_safety.qmd", output_format = "html")
+quarto_render("40_tlf_source/generated/facitf_total_policy.qmd", output_format = "html")
+quarto_render("40_tlf_source/generated/facitf_total_efficacy.qmd", output_format = "html")
+quarto_render("40_tlf_source/generated/vital_signs_safety.qmd", output_format = "html")
+quarto_render("40_tlf_source/generated/summary_primary_and_key_secondary_policy.qmd", output_format = "html")
+quarto_render("40_tlf_source/generated/madrs_total10_policy.qmd", output_format = "html")
+quarto_render("40_tlf_source/generated/madrs_total10_efficacy.qmd", output_format = "html")
+quarto_render("40_tlf_source/generated/hama_total_efficacy.qmd", output_format = "html")
+quarto_render("40_tlf_source/generated/hamd_total17_efficacy.qmd", output_format = "html")
+quarto_render("40_tlf_source/generated/hamd_total17_policy.qmd", output_format = "html")
+quarto_render("40_tlf_source/generated/saps_total_safety.qmd", output_format = "html")
+quarto_render("40_tlf_source/generated/mdi_total_efficacy.qmd", output_format = "html")
+quarto_render("40_tlf_source/generated/biochemistry_safety.qmd", output_format = "html")
+quarto_render("40_tlf_source/generated/baseline_and_observation_status.qmd", output_format = "html")
+quarto_render("40_tlf_source/generated/adverse_events.qmd", output_format = "html")
+quarto_render("40_tlf_source/generated/serious_clinical_events.qmd", output_format = "html")
+quarto_render("40_tlf_source/generated/participant_status.qmd", output_format = "html")
+```
+
+
+## Appendix
+
+
+### **R** session info
+
+```{r}
+sessionInfo()
+```
+
+
+
+
+
+
+
+
+

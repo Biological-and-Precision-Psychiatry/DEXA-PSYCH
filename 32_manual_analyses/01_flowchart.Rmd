@@ -1,0 +1,427 @@
+---
+title: "Consort flow chart"
+author: "Eva N. S. Wandall"
+date: "`r Sys.Date()`, original: 2026-03-25"
+output: 
+  html_document:
+    self_contained: yes    
+    toc: yes
+    toc_float: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup0, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+
+# wider output when knit'ing:
+if (isTRUE(getOption("knitr.in.progress")) && !knitr::is_latex_output()) {
+  options(width = 110)
+}
+```
+
+```{r setup, results='hide', message=FALSE}
+## load packages:
+library(data.table)
+library(writexl)
+library(CRP)
+library(consort)
+library(DiagrammeR)
+library(grid)
+library(ggplot2)
+
+source("20_functions/source_dir.R")
+source_dir("20_functions")
+```
+
+## Make data for CONSORT flowchart
+
+## Read data 
+
+Read file compiled in `01_prepare_data.Rmd`:
+```{r}
+d0 <- get_derived_data()
+
+# Exceptions
+except <- readRDS(file = "02_data_derived/exceptions.rds")
+```
+
+Read file compiled in `11_derive_variables.Rmd`:
+```{r}
+adat <- get_analysis_data()
+
+# IDs
+did <- readRDS(file = "02_data_derived/all_subject_ids.rds")
+```
+
+
+### Participants excluded
+
+IDs of excluded participants
+```{r}
+excl_ids <- did[is.na(rand_id), unique(ID)]
+```
+
+Participants with a standard pre-coded exclusion reason
+```{r}
+excl_dt1 <- d0[ID %in% excl_ids & 
+                 variable == "screen_noninkl_aarsag" & 
+                 c_value != "Andet (uddyb)"][, .(ID, c_value)]
+setnames(excl_dt1, "c_value", "excl_reason")
+```
+
+Participants with free-text exclusion reasons (manually reviewed)
+```{r}
+# List manually reviewed free-text exclusion reasons from exceptions file
+excl_exceptions <- except[grep("^exclusion_", names(except))]
+
+excl_dt2 <- data.table(
+  excl_reason = rep(names(excl_exceptions), lengths(excl_exceptions)),
+  ID = as.integer(unlist(excl_exceptions, use.names = FALSE))
+)
+```
+
+Violations of inclusion/exclusion criteria registered in `inklusion_...` or  `eksklusion_...` variables
+```{r}
+excl_ids3 <- setdiff(excl_ids, c(excl_dt1$ID, excl_dt2$ID))
+excl_dt3a <- d0[ID %in% excl_ids3 & 
+                 ((substr(variable, 1,10) == "inklusion_" & c_value != "Yes") | 
+                    (substr(variable, 1,11) == "eksklusion_" & c_value != "No"))]
+excl_dt3a[, excl_reason := paste0(variable, ": ", c_value)]
+
+# Choose first violated criteria per participant:
+excl_dt3 <- excl_dt3a[, .SD[1], .(ID, date)][, .(ID, excl_reason)]
+```
+
+Collect data on all excluded participants:
+```{r}
+excl_dt <- rbind(excl_dt1, 
+                 excl_dt2,
+                 excl_dt3)
+
+# Sanity checks: One row per excluded participant, none randomized
+stopifnot(nrow(excl_dt) == length(excl_ids))
+stopifnot(nrow(excl_dt) == excl_dt[, uniqueN(ID)])
+stopifnot(nrow(d0[ID %in% excl_dt$ID & !is.na(rand_id)]) == 0)
+```
+
+Group exclusion reasons
+```{r}
+# Not moderate/severe depression
+excl_dt[excl_reason %in% c("Ikke moderat-til-svær depression",
+                           "inklusion_madrs: No",
+                           "inklusion_depression: No"),
+        exclusion_reason := "Did not meet criteria for current moderate-to-severe depression"]
+
+# Declined participation
+excl_dt[excl_reason %in% c("Har ikke lyst til/mulighed for at deltage",
+                           "Deltageren har ikke kunne kontaktes per telefon eller mail",
+                           "exclusion_declined_participation"),
+        exclusion_reason := "Declined participation or could not be contacted"]
+
+#Prior or current psychiatric disorders
+excl_dt[excl_reason %in% c(paste("Er eller har været diagnosticeret med psykotisk lidelse,",
+                                 "personlighedsforstyrrelse, spiseforstyrrelse eller bipolar",
+                                 "affektiv sindslidelse"),
+                           "eksklusion_prevpsych: Yes",
+                           "exclusion_psychiatric_disorders"),
+        exclusion_reason :=  "Current or previous diagnosis with psychotic disorder, 
+        personality disorder, bipolar disorder or eating disorder"]
+
+# Not fluent in Danish
+excl_dt[excl_reason %in% c("Taler ikke dansk", 
+                           "exclusion_not_fluent_in_danish"),
+        exclusion_reason := "Not fluent in Danish"]
+
+# No current pharmacological treatment
+excl_dt[excl_reason %in% c("Ingen farmakologisk behandling mod depression",
+                           "inklusion_med: No",
+                           "exclusion_no_pharmacological_treatment"),
+        exclusion_reason := "No current pharmacological treatment for depression"]
+
+# Concurrent medical treatments
+excl_dt[excl_reason %in% c("Behandles med kalium-depleterende diuretika",
+                           "Har fået ECT-, MAO-I- eller TMS-behandling indenfor de seneste 14 dage",
+                           "Er i behandling med glukokortikoider",
+                           "eksklusion_diuretics: Yes",
+                           "exclusion_concurrent_medical_condition"),
+        exclusion_reason := "Concurrent medical treatments"]
+
+# First degree relative with bipolar disorder
+excl_dt[excl_reason %in% c("Har 1.2- gradsslægtning med bipolar affektiv sindslidelse",
+                           "eksklusion_fambipolar: Yes"),
+        exclusion_reason := "First degree relative with bipolar disorder"]
+
+# Somatic illness (diabetes, immunodeficiency, epilepsy etc.)
+excl_dt[excl_reason %in% c("Er diagnosticeret med diabetes",
+                           "Er immundefekt",
+                           "Har epilepsi",
+                           "Har hæmatologisk malignitet",
+                           "Har systemisk svampeinfektion eller aktiv TB",
+                           "Har systemisk sklerose"),
+        exclusion_reason := "Somatic illness (diabetes, immunodeficiency, epilepsy etc.)"]
+
+# Active, suicidal plans
+excl_dt[excl_reason %in% c("Har selvmordsplaner",
+                           "eksklusion_suicide: Yes"),
+        exclusion_reason := "Active suicidal plans"]
+
+# Age < 18 or >64
+excl_dt[excl_reason %in% c("Under 18 eller over 64 år"),
+        exclusion_reason := "<18 or >64 years old"]
+
+# Active alcohol or substance use disorder
+excl_dt[excl_reason %in% c("exclusion_aud_or_sud"),
+        exclusion_reason := "Active alcohol or substance use disorder"]
+
+# Other reasons
+excl_dt[excl_reason %in% c("Ikke tilknyttet Region Hovedstadens Psykiatri",
+                           "eksklusion_alat: Yes",
+                           "Er gravid eller ikke-adhærent til antikontraceptiva",
+                           "Allergisk overfor glukokortikoider",
+                           "exclusion_other"),
+        exclusion_reason := "Other reason for exclusion"]
+
+stopifnot(excl_dt[is.na(exclusion_reason), .N] == 0)
+```
+
+```{r}
+# Initiate individual flowchart data
+flow_dt <- merge(did, excl_dt[, .(ID, exclusion_reason)], all.x = TRUE)
+```
+
+### Treatment assignment and safety analysis set eligibility
+```{r}
+# Take first record per ID to avoid duplicates from multi-row adat
+adat[, i_sas := as.integer(c_SAS == "yes")]
+flow_dt <- merge(flow_dt, adat[, .(ID, trt, i_sas)][, .SD[1], ID], all.x = TRUE)
+```
+
+### Discontinuation of the intervention
+
+Compliant participants
+```{r}
+## Took all doses
+ids_compliant1 <- d0[variable == "compliance" & 
+                        part == "janej" & 
+                        c_value == "Ja", unique(ID)]
+## 4 individuals deemed compliant by investigator despite not completing all doses
+ids_compliant2 <- as.integer(except$deemed_compliant)
+stopifnot(length(ids_compliant2) == 4)
+
+protocol_compliance <- data.table(ID = c(ids_compliant1, ids_compliant2),
+                                  discontinued_trt = 0,
+                                  non_compliance_reason = NA_character_)
+```
+
+Non-compliant participants
+```{r}
+# 2 discontinued by clinician, due to adverse event
+ids_trt_discontinuation_clinician <- as.integer(except$trt_discontinuation_clinician)
+stopifnot(length(ids_trt_discontinuation_clinician) == 2)
+discontinued_by_clinician <- data.table(ID = ids_trt_discontinuation_clinician,
+                                        discontinued_trt = 1,
+                                        non_compliance_reason = "by clinician, due to adverse event")
+
+# 1 discontinued by participant, due to adverse event
+ids_trt_discontinuation_participant <- as.integer(except$trt_discontinuation_participant)
+stopifnot(length(ids_trt_discontinuation_participant) == 1)
+discontinued_by_participant <- data.table(ID = ids_trt_discontinuation_participant,
+                                          discontinued_trt = 1,
+                                          non_compliance_reason = "by participant, due to adverse event")
+
+# Combine and merge onto flow_dt
+compl_dt <- rbind(protocol_compliance,
+                  discontinued_by_clinician,
+                  discontinued_by_participant)
+flow_dt <- merge(flow_dt, compl_dt, all.x = TRUE)
+
+stopifnot(adat[!(ID %in% compl_dt$ID), .N] == 0)
+```
+
+### Followed-up at day 4, 7, 14, 28 (MADRS-10)
+
+```{r}
+madrs10_dates <- adat[f_visit %in% c("day0","day4", "day7", "day14","day28") & 
+                        variable == "madrs" & 
+                        part == "total10" & 
+                        state == "in_window" &
+                        !is.na(value), 
+                      .SD[1], by = c("f_visit", "ID")
+                      ][, .(ID, f_visit)]
+
+madrs10_dates[, indicator := 1]
+madrs10_dates <- dcast(madrs10_dates, 
+                       ID ~ f_visit, 
+                       value.var = "indicator", 
+                       fill = 0)
+madrs10_dates <- madrs10_dates[, !"day0"]
+
+flow_dt <- merge(flow_dt, madrs10_dates, all.x = TRUE)
+```
+
+### Contribution to the primary outcome 
+
+Policy estimand:
+```{r}
+# Participants with a MADRS-10 assessment at day 4 or day 7 in-window
+flow_dt[!is.na(rand_id), policy := ifelse(day4 + day7 > 0, 1,0)]
+```
+
+Efficacy estimand:
+```{r}
+# Participants with a MADRS-10 at day 4 or 7 in window AND recorded as 
+# on-treatment at both visits
+efficacy_estimand <- adat[f_visit %in% c("day4", "day7") & 
+                             variable == "madrs" & 
+                             part == "total10" & 
+                             state == "in_window", 
+                           .(efficacy = as.integer(all(c_on_treat != "no"))),
+                           keyby = .(ID)]
+
+flow_dt <- merge(flow_dt, efficacy_estimand, all.x = TRUE)
+```
+
+
+## Creating flowchart with consort package
+
+Layout functions
+```{r}
+# Build an indented list from a named integer vector
+indent <- function(labels, counts, level = 1) {
+  paste0(strrep("\t", level), counts, " ", labels, collapse = "\n")
+}
+
+# Build an unindented list from a named integer vector
+inline <- function(labels, counts) {
+  paste0(counts, " ", labels, collapse = "\n")
+}
+
+# Pad each line of (possibly multi-line) strings to a fixed width
+pad_txt <- function(txt, width = 50, indent_wrap = 3) {
+  sapply(txt, function(t) {
+    lines <- strsplit(t, "\n")[[1]]
+
+    # Indentation level
+    level       <- nchar(regmatches(lines, regexpr("^\t*", lines)))
+    clean_lines <- sub("^\t*", "", lines)
+
+    padded <- sapply(seq_along(lines), function(i) {
+      ind        <- strrep(" ", indent_wrap * level[i])
+      wrap_width <- width - nchar(ind)
+
+      wrapped <- strwrap(clean_lines[i], width = wrap_width)
+      wrapped <- c(
+        paste0(ind, wrapped[1]),
+        if (length(wrapped) > 1) paste0(ind, strrep(" ", indent_wrap), wrapped[-1])
+      )
+      paste(formatC(wrapped, width = width, flag = "-"), collapse = "\n")
+    })
+
+    paste(padded, collapse = "\n")
+  }, USE.NAMES = FALSE)
+}
+
+pad_box <- function(txt, h_pad = 3, v_pad = 1) {
+  sapply(txt, function(t) {
+    lines   <- strsplit(t, "\n")[[1]]
+    h_padded <- paste0(strrep(" ", h_pad), lines, strrep(" ", h_pad))
+    v_padded <- c(strrep(" ", h_pad), h_padded, strrep(" ", h_pad))
+    paste(v_padded, collapse = "\n")
+  }, USE.NAMES = FALSE)
+}
+
+lower_first_letter <- function(x) paste0(tolower(substr(x, 1, 1)), substr(x, 2, nchar(x)))
+```
+
+Extracting numbers and making labels
+```{r}
+# Screened
+n_screened <- flow_dt[, uniqueN(ID)]
+screen_txt <- "participants were screened for eligibility"
+
+# Excluded (side-box)
+n_excluded <- flow_dt[, sum(is.na(rand_id))]
+excl <- flow_dt[!is.na(exclusion_reason), .N, by = exclusion_reason][order(-N)]
+excl[N < 3, exclusion_reason := "Other reason"]
+excl <- excl[, .(N = sum(N)), by = exclusion_reason][order(-N)]
+# Remove line shifts in labels, so pad_txt can wrap them correctly
+excl[, exclusion_reason := gsub("\\s*\n\\s*", " ", exclusion_reason)]
+excl_txt <- pad_txt(paste0(
+  n_excluded, " were excluded:\n",
+  indent(excl$exclusion_reason, excl$N, level = 1)
+))
+
+# Randomized
+n_rand     <- flow_dt[, sum(!is.na(rand_id))]
+rand_txt <- "undervent randomization"
+
+# Treatment assignment
+arms      <- as.character(flow_dt[!is.na(trt), unique(trt)])
+arms      <- c(arms[!grepl("^[Pp]lacebo", arms)], arms[grepl("^[Pp]lacebo", arms)])
+n_per_arm <- setNames(sapply(arms, function(a) flow_dt[trt == a, .N]), arms)
+
+trt_labels <- setNames(
+  c(paste0("were assigned to and recieved ", 
+           lower_first_letter(arms[1]), 
+           " (4mg x 4 days + 2mg x 3 days)"),
+    paste0("were assigned to and recieved ", 
+           lower_first_letter(arms[2]), 
+           " (7 days)")),
+  arms
+)
+arm_labels <- pad_txt(paste(n_per_arm[arms], trt_labels))
+
+# Discontinuation of intervention
+mk_disc_text <- function(a) {
+  disc <- flow_dt[trt == a & !is.na(non_compliance_reason), .N, 
+                  by = non_compliance_reason]
+  paste0(sum(disc$N), " discontinued the intervention\n",
+         indent(disc$non_compliance_reason, disc$N, level = 1))}
+disc_txt <- pad_txt(sapply(arms, function(a) mk_disc_text(a)))
+
+# Followed-up
+visits   <- c("were followed up at day 4" = "day4", 
+              "were followed up at day 7" = "day7", 
+              "were followed up at day 14" = "day14", 
+              "were followed up at day 28" = "day28")
+mk_fu_text <- function(a) {
+  fu_counts <- sapply(visits, function(v) flow_dt[trt == a & get(v) == 1L, .N])
+  inline(names(visits), fu_counts)}
+fu_txt   <- pad_txt(sapply(arms, mk_fu_text))
+
+# Analyses
+analyses <- c("contributed to the primary estimand (treatment policy)*" = "policy", 
+              "contributed to the secondary estimand (treatment efficacy)*" = "efficacy", 
+              "were included in the safety analysis set" = "i_sas")
+mk_an_text <- function(a) {
+  an_counts <- sapply(analyses, function(v) flow_dt[trt == a & get(v) == 1L, .N])
+  inline(names(analyses), an_counts)
+}
+an_txt <- pad_txt(sapply(arms, mk_an_text))
+```
+
+Build CONSORT diagram
+```{r}
+g <- add_box(txt = pad_box(paste(n_screened, screen_txt))) |>
+  add_side_box(txt = pad_box(excl_txt)) |>
+  add_box(txt = pad_box(paste(n_rand, rand_txt))) |>
+  add_split(txt = pad_box(arm_labels), just = "left") |>
+  add_box(txt = pad_box(disc_txt),  just = "left") |>
+  add_box(txt = pad_box(fu_txt),    just = "left") |>
+  add_box(txt = pad_box(an_txt),  just = "left")
+plot(g, grViz = TRUE)
+
+gg <- build_grid(g)
+```
+
+Save CONSORT diagram
+```{r}
+ggsave("40_tlf_source/figures/consort_diagram.pdf", plot = gg, width = 29, height = 50, units = "cm")
+ggsave("40_tlf_source/figures/consort_diagram.png", plot = gg, width = 29, height = 50, units = "cm")
+```
+
+
+
+

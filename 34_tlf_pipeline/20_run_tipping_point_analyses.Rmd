@@ -1,0 +1,415 @@
+---
+title: "Tipping point analysis for MADRS~10~"
+author: "Rune Haubo B Christensen"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+  pdf_document:
+    toc: true
+header-includes: 
+- \usepackage{float}
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup0, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, collapse = TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+options(knitr.kable.NA = '')
+
+# wider output when knit'ing:
+if (isTRUE(getOption("knitr.in.progress")) && !knitr::is_latex_output()) {
+  options(width = 110)
+}
+```
+
+## Introduction 
+
+This script/note produces tipping point analyses for MADRS~10~ change-from-baseline across two estimands (policy and efficacy) and for all post-baseline visits (days 4, 7, 14, and 28). Two types of analyses are conducted: one-way and two-way tipping point analyses.
+
+The main results from this note are four overview tables (by one/two-way analysis and policy/efficacy estimand) and one figure/plot for each of the 4 visits for each of the 4 settings (16 figures in total). The location, section headers and table/figure captions are defined in the _metadata_ file but unlike (most) other analyses the relevant tables and figures are produced here rather than by the standardized TLF-pipeline (However, footnotes for figures are still produced by the TLF-pipeline when calling `mk_tlf_ch()` based on _metadata_ information). Upon compilation, all tables and figures are included in the TLF-book.
+
+The tipping point analyses assess deviations from MAR assumptions of the primary analysis models by adjusting the mean outcome for subjects with missing values by an amount $\delta$ away from their MAR-expected value. The primary analysis model is an MMRM for all endpoints except for day 4, where the primary analysis model is an ANCOVA adjusted for missing values using inverse probability of censoring weighting (IPCW).
+
+A technical report describes the methodology and our R-implementation of tipping point analyses.
+
+
+## Setup and get data
+
+```{r setup, results='hide', message=FALSE, warning=FALSE}
+library(data.table)
+library(ggplot2)
+library(gt)
+library(CRP)
+library(metR) # for geom_text_contour()
+
+source("20_functions/source_dir.R")
+source_dir("20_functions")
+```
+
+Get data:
+```{r}
+# Policy-estimand data:
+dt_pol <- get_outcome_data("madrs_total10", set = "FAS", estimand = "policy")
+trt_levs <- get_trt_levs(dt_pol)
+ref_trt_lev  <- trt_levs[1] |> unname()
+dexa_trt_lev <- trt_levs[2] |> unname()
+dt_pol[, trt := relevel(trt, ref_trt_lev)]
+dt_pol[, cens := 1.0 * is.na(value)]
+
+# Efficacy-estimand data:
+dt_eff <- get_outcome_data("madrs_total10", set = "FAS", estimand = "efficacy")
+dt_eff[, trt := relevel(trt, ref_trt_lev)]
+dt_eff[, cens := 1.0 * is.na(value)]
+
+tlf_reg <- get_metadata()
+```
+
+
+## One-way tipping point analyses
+
+Conduct one-way tipping point analyses across both estimands, all visits and for both treatment arms. The code both estimates the tipping points and produce the one-way figures:
+```{r one_way_TP_analyses}
+cases0 <- tlf_reg[chapter == "madrs_total10" &
+                    outcome_kind == "chgbl" &
+                    role == "Primary" &
+                    tlf_type == "table", 
+                  .(estimand, visit, endpoint_id)]
+cases0[, Visit := factor(visit, labels = paste0("day", unique(visit)))]
+cases1 <- cases0[, .(Arm = c("reference", "active")), 
+                 .(estimand, visit, endpoint_id, Visit)]
+regis <- tlf_reg[analysis == "tipping1" & tlf_type == "figure", 
+                 .(estimand, visit, tlf_type, folder, file_stem)]
+cases <- merge(cases1, regis, by = c("estimand", "visit"), 
+               all = TRUE, sort = FALSE)
+cases
+
+# Generate all one-way figures and tipping point estimates:
+res1w <- lapply(seq_len(cases[, .N]), function(i) { # i <- 5
+  Estimand <- cases[i, estimand]
+  Visit    <- cases[i, Visit]
+  Arm      <- cases[i, Arm] |> as.vector()
+  arm_name <- if(Arm == "reference") trt_levs[1] else trt_levs[2]
+  eid      <- cases[i, endpoint_id]
+  regi     <- tlf_reg[endpoint_id == eid]
+  
+  # Get data:
+  .d <- if(Estimand == "policy") dt_pol else dt_eff
+  .d <- .d[f_visit == Visit] 
+
+  # Get MAR-fit:
+  fit <- get_mar_fit(regi)
+
+  if(Arm == "reference") { # Only making figures once per estimand x visit
+    png_path <- cases[i, file.path(folder, paste0(file_stem, ".png"))]
+    pdf_path <- cases[i, file.path(folder, paste0(file_stem, ".pdf"))]
+    
+    # Produce one-way tipping point figure:
+    fig <- tp_one_way(fit, .d, ylab_sub = trt_levs)
+    cowplot::ggsave2(filename = png_path, fig, width = 7, height = 5)
+    cowplot::ggsave2(filename = pdf_path, fig, width = 7, height = 5)
+  }
+  
+  # Calculate tipping point:
+  ans <- tipping_point(.d, arm = arm_name, fit = fit)[, -c("MAR")]
+  ans2 <- attr(ans, "delta_results")[, -c("N", "pmiss")]
+  ans3 <- merge(ans2, ans, by = "coef", all = TRUE, sort = FALSE)
+  setcolorder(ans3, c("coef", "N", "Nmiss", "pmiss"))
+  cbind(cases[i], ans3)
+})
+allres1w <- rbindlist(res1w)
+```
+
+Format the table of one-way tipping points:
+```{r}
+tmp <- allres1w[(is.na(penalty) | penalty == "Yes")]
+tmp[, Arm := fifelse(Arm == "reference", trt_levs[1], trt_levs[2])]
+tmp[, est_ci := CRP::format_estci(est, lwr, upr, ci_sep = "; ", digits = 1), by = .I]
+
+tmp1 <- tmp[coef != "ETD", .(estimand, Visit, coef, N, Nmiss, 
+                             EMM = do_format(est, digits = 1), TP, mean_pct = pct_diff)]
+tmp2 <- tmp[coef == "ETD", .(estimand, Visit, coef = Arm, ETD = est_ci, etd_pct = pct_diff)]
+tmp3 <- merge(tmp1, tmp2, by = c("estimand", "Visit", "coef"), all = TRUE, sort = FALSE)
+tmp3[, coef := factor(coef, levels = trt_levs)]
+tmp3[, Type := "1-way"]
+setorder(tmp3, -estimand, Visit, coef)
+setcolorder(tmp3, c("estimand", "Visit", "Type", "coef", "N", "Nmiss", "EMM", "ETD", 
+                    "TP", "mean_pct", "etd_pct"))
+setnames(tmp3, c("estimand", "coef", "Nmiss", "TP", "EMM", "ETD", "mean_pct", "etd_pct"), 
+         c("Estimand", "Treatment", "Miss", "TP", "Est. Mean", "Effect (95% CI)", 
+           "%-of-Mean", "%-of-Effect"))
+tmp3[, `TP` := gsub("Effect is not significant", "", `TP`)]
+tmp3[, `TP` := gsub("No missing values", "", `TP`)]
+tmp3[, `TP` := trimws(gsub("Tipping Point", "", `TP`))]
+tmp3[, Visit := gsub("day", "Day ", Visit)]
+```
+
+Define footers for the tables:
+```{r}
+footers <- get_footers()
+
+scale <- footers[type == "scale" & key == "MADRS~10~", footer]
+
+# Definition of 1-way TP-analysis:
+def <- paste("One-way tipping point analysis where the reference model", 
+             "(under MAR assumptions) is the primary analysis model")
+       
+links_po <- cases0[estimand == "policy", 
+                  paste0("Day ", visit, ": [-@sec-", endpoint_id, "]")]
+links_po <- paste(links_po, collapse = ", ")
+def_po <- paste0(def, " (", links_po, ").")
+
+links_ef <- cases0[estimand == "efficacy", 
+                  paste0("Day ", visit, ": [-@sec-", endpoint_id, "]")]
+links_ef <- paste(links_ef, collapse = ", ")
+def_ef <- paste0(def, " (", links_ef, ").")
+
+# Qualifiers:
+qual_po <- paste(footers[type == "qualifier" & 
+                           key %in% c("policy", "FAS", "any_treatment"), footer],
+                 collapse = " ")
+qual_ef <- paste(footers[type == "qualifier" & 
+                           key %in% c("efficacy", "FAS", "on_treatment"), footer],
+                 collapse = " ")
+
+abbrev <- paste0(paste(
+  "N: Subjects contributing to analysis",
+  "Miss: Subjects with missing outcome value", 
+  sep = ", "), ".")
+
+footer_list_tipping_point <- 
+  list("Est. Mean: Estimated mean change-from-baseline under MAR assumptions.",
+       "Effect: Estimated treatment difference for Dexamethasone - Placebo under MAR assumptions.",
+       "Tipping Point (TP): How much better (Placebo) or worse (Dexamethasone) the outcome would have to be in subjects with missing values to tip the effect from significant to non-significant with no penalty applied in the unaffected arm. Not reported if there are no missing values or the 95% upper confidence limit for the Effect is not below zero.",
+       "%-of-Mean: The size of the Tipping Point relative to the estimated mean change-from-baseline under MAR assumptions in the penalized arm.",
+       "%-of-Effect: The size of the Tipping Point relative to the Effect under MAR assumptions.")
+
+footer_list_tp_policy   <- c(list(scale = scale, definition = def_po, 
+                                  qual = qual_po, abbrev = abbrev), 
+                             footer_list_tipping_point)
+footer_list_tp_efficacy <- c(list(scale = scale, definition = def_ef, 
+                                  qual = qual_ef, abbrev = abbrev), 
+                             footer_list_tipping_point) 
+```
+
+
+### Policy estimand overview
+
+Overview table for the one-way tipping point analyses of MADRS~10~ change-from-baseline for the policy estimand:
+```{r}
+regi <- tlf_reg[analysis == "tipping1" & estimand == "policy" & 
+                  tlf_type == "table"]
+gt_tab <- mk_gt_table(tmp3[Estimand == "policy", -c("Estimand", "Type")], 
+            footer_list = footer_list_tp_policy)
+gt_tab
+save_gt_table(gt_tab, regi = regi, verbose = TRUE)
+```
+
+
+### Efficacy estimand overview
+
+Overview table for the one-way tipping point analysis of MADRS~10~ change-from-baseline for the efficacy estimand:
+```{r}
+regi <- tlf_reg[analysis == "tipping1" & estimand == "efficacy" & 
+                  tlf_type == "table"]
+gt_tab <- mk_gt_table(tmp3[Estimand == "efficacy", -c("Estimand", "Type")], 
+            footer_list = footer_list_tp_efficacy)
+gt_tab
+save_gt_table(gt_tab, regi = regi, verbose = TRUE)
+```
+
+### Example of one-way tipping point figure
+
+```{r one_way_TP, out.width='70%', fig.alt="One-way Tipping Point analysis to day 14"}
+path_to_fig <- cases[Visit == "day14"][1, file.path(folder, paste0(file_stem, ".png"))]
+knitr::include_graphics(normalizePath(path_to_fig, winslash = "/"), 
+                        auto_pdf = TRUE, rel_path = FALSE)
+```
+
+
+## Two-way tipping point analyses
+
+Conduct two-way tipping point analyses across both estimands and all visits. The code both estimates the tipping points and produce the two-way contour plots:
+```{r two_way_TP_analyses}
+regis <- tlf_reg[analysis == "tipping2" & tlf_type == "figure", 
+                 .(estimand, visit, tlf_type, folder, file_stem)]
+cases <- merge(cases0, regis, by = c("estimand", "visit"), 
+               all = TRUE, sort = FALSE)
+cases
+
+res2w <- lapply(seq_len(cases[, .N]), function(i) { # i <- 2
+  Estimand <- cases[i, estimand]
+  Visit    <- cases[i, Visit]
+  eid      <- cases[i, endpoint_id]
+  regi     <- tlf_reg[endpoint_id == eid]
+  
+  # Get data:
+  .d <- if(Estimand == "policy") dt_pol else dt_eff
+  .d <- .d[f_visit == Visit] 
+
+  # Get MAR-fit:
+  fit <- get_mar_fit(regi)
+  
+  # Make file paths:
+  png_path <- cases[i, file.path(folder, paste0(file_stem, ".png"))]
+  pdf_path <- cases[i, file.path(folder, paste0(file_stem, ".pdf"))]
+
+  # Calculate tipping point:
+  ans <- tipping_point(.d, arm = trt_levs, fit = fit)[, -c("MAR")]
+
+  # Compute grid size from tipping point estimate:
+  tp <- ans[coef == "ETD", TP]
+  if(grepl("[[:alpha:]]", tp)) {
+    tol <- 5
+  } else {
+    tol <- as.numeric(tp) * 2.2   # 20% larger than twice the two-way TP
+    tol <- pmin(pmax(5, tol), 20) # truncate at 5 and 20 
+    tol <- ceiling(tol)           # round up
+  }
+  
+  # Produce two-way tipping point figure:
+  delta_vec = seq(-tol, tol, length.out = 21)
+  fig <- tp_two_way(fit, .d, ylab_sub = trt_levs, 
+                    delta_ref = delta_vec, delta_act = delta_vec)
+
+  # Save figures:
+  cowplot::ggsave2(filename = png_path, fig, width = 7, height = 7)
+  cowplot::ggsave2(filename = pdf_path, fig, width = 7, height = 7)
+  
+  # Collect results for table:
+  ans2 <- attr(ans, "delta_results")[, -c("N", "pmiss")]
+  ans3 <- merge(ans2, ans, by = "coef", all = TRUE, sort = FALSE)
+  setcolorder(ans3, c("coef", "N", "Nmiss", "pmiss"))
+  cbind(cases[i], Arm = "both", ans3)
+})
+allres2w <- rbindlist(res2w)
+```
+
+Format the table of two-way tipping points:
+```{r}
+tmp <- allres2w[(is.na(penalty) | penalty == "Yes")]
+tmp[, est_ci := CRP::format_estci(est, lwr, upr, ci_sep = "; ", digits = 1), by = .I]
+
+tmp1 <- tmp[coef != "ETD", .(estimand, Visit, coef, N, Nmiss, 
+                             EMM = do_format(est, digits = 1), TP, mean_pct = pct_diff)]
+tmp2 <- tmp[coef == "ETD", .(estimand, Visit, ETD = est_ci, etd_pct = pct_diff)]
+tmp4 <- merge(tmp1, tmp2, by = c("estimand", "Visit"), all = TRUE, sort = FALSE)
+tmp4[, coef := factor(coef, levels = trt_levs)]
+tmp4[, Type := "2-way"]
+setorder(tmp4, -estimand, Visit, coef)
+setcolorder(tmp4, c("estimand", "Visit", "Type", "coef", "N", "Nmiss", "EMM", "ETD", 
+                    "TP", "mean_pct", "etd_pct"))
+setnames(tmp4, c("estimand", "coef", "Nmiss", "TP", "EMM", "ETD", "mean_pct", "etd_pct"), 
+         c("Estimand", "Treatment", "Miss", "TP", "Est. Mean", "Effect (95% CI)", 
+           "%-of-Mean", "%-of-Effect"))
+tmp4[, `TP` := gsub("Effect is not significant", "", `TP`)]
+tmp4[, `TP` := gsub("No missing values", "", `TP`)]
+tmp4[, `TP` := trimws(gsub("Tipping Point", "", `TP`))]
+tmp4[, Visit := gsub("day", "Day ", Visit)]
+```
+
+Define footers for the tables:
+```{r}
+def <- paste("Two-way tipping point analysis where the reference model", 
+             "(under MAR assumptions) is the primary analysis model")
+def_po <- paste0(def, " (", links_po, ").")
+def_ef <- paste0(def, " (", links_ef, ").")
+
+footer_list_tipping_point <- 
+  list("Est. Mean: Estimated mean change-from-baseline under MAR assumptions.",
+       "Effect: Estimated treatment difference for Dexamethasone - Placebo under MAR assumptions.",
+       "Tipping Point (TP): How much better (Placebo) and worse (Dexamethasone) the outcome would have to be in subjects with missing values to tip the effect from significant to non-significant with the same penalty applied in both arms. Not reported if there are no missing values or the 95% upper confidence limit for the Effect is not below zero.",
+       "%-of-Mean: The size of the arm-specific penalites (the Tipping Point value) relative to the arm-specific estimated mean change-from-baseline under MAR assumptions.",
+       "%-of-Effect: The size of the joint penality (twice the Tipping Point value) relative to the Effect under MAR assumptions.")
+
+footer_list_tp_policy   <- c(list(scale = scale, definition = def_po, 
+                                  qual = qual_po, abbrev = abbrev), 
+                             footer_list_tipping_point)
+footer_list_tp_efficacy <- c(list(scale = scale, definition = def_ef, 
+                                  qual = qual_ef, abbrev = abbrev), 
+                             footer_list_tipping_point) 
+```
+
+
+### Policy estimand overview
+
+Overview table for the two-way tipping point analyses of MADRS~10~ change-from-baseline for the policy estimand:
+```{r}
+regi <- tlf_reg[analysis == "tipping2" & estimand == "policy" & 
+                  tlf_type == "table"]
+gt_tab <- mk_gt_table(tmp4[Estimand == "policy", -c("Estimand", "Type")], 
+            footer_list = footer_list_tp_policy)
+gt_tab
+save_gt_table(gt_tab, regi = regi, verbose = TRUE)
+```
+
+
+### Efficacy estimand overview
+
+Overview table for the two-way tipping point analysis of MADRS~10~ change-from-baseline for the efficacy estimand:
+```{r}
+regi <- tlf_reg[analysis == "tipping2" & estimand == "efficacy" & 
+                  tlf_type == "table"]
+gt_tab <- mk_gt_table(tmp4[Estimand == "efficacy", -c("Estimand", "Type")], 
+            footer_list = footer_list_tp_efficacy)
+gt_tab
+save_gt_table(gt_tab, regi = regi, verbose = TRUE)
+```
+
+
+### Example of two-way tipping point figure
+
+```{r two_way_TP, out.width='60%', fig.alt="Two-way Tipping Point analysis to day 14."}
+path_to_fig <- cases[Visit == "day14"][1, file.path(folder, paste0(file_stem, ".png"))]
+knitr::include_graphics(normalizePath(path_to_fig, winslash = "/"), 
+                        auto_pdf = TRUE, rel_path = FALSE)
+```
+
+
+## Appendix
+
+### **R** session info
+
+```{r}
+sessionInfo()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

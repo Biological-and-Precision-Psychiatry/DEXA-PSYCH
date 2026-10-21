@@ -1,0 +1,289 @@
+---
+title: "Standalone Analysis of Primary Endpoint for parallel programming"
+author: "Eva Nina S Wandall, statistician"
+date: "Last run: `r Sys.Date()`, Last edit: 2026-08-26"
+params:
+  raw_trial_data_path: "L:/Auditdata/DEXA-PSYCH/15 - Databehandling/02 - REDCap raw data/DEXAPSYCH-Rchrdata_DATA_2026-06-11_1035.csv"
+  treatment_data_path: "02_data_derived/treatment_arm.rds"
+  output_path: "80_parallel_programming/pp_outputs/output_ensw.rds"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup0, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.retina = 4)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+options(knitr.kable.NA = '')
+```
+
+# Introduction
+
+This script derives the estimate of the treatment effect of Dexamethasone compared
+to Placebo on the change-from-baseline MADRS-10 total score at day 7 using the 
+treatment policy estimand (the primary analysis of the primary endpoint for the 
+primary estimand) based on the Statistical Analysis Plan (SAP), version 1.0. The 
+script was developed independently as part of the parallel programming quality 
+control process.
+
+The program relies on `data.table` for data management, `mmrm` for fitting the 
+mixed model for repeated measurements, and `emmeans` for obtaining estimates 
+adjusted to the full analysis set (FAS). R version and package versions are 
+documented in the `sessionInfo()` in the Appendix.
+
+The target output format follows the specifications in
+*parallel_programming_output_target.xlsx* which is located in the current
+folder.
+Paths to input data (raw trial data exported from REDCap and treatment
+allocation file) and output file are specified via the parameters
+`raw_trial_data_path`, `treatment_data_path` and `output_path` in the YAML
+header.
+
+# Setup
+
+Load libraries
+```{r}
+library(data.table)
+library(mmrm)
+library(emmeans)
+```
+
+# Data preparation
+
+Load the raw trial data and treatment allocation data
+```{r}
+# Raw data exported from REDcap
+raw_dt <- fread(params$raw_trial_data_path)
+# Treatment allocation file
+trt_dt <- readRDS(params$treatment_data_path)
+```
+
+Select variables and observations
+```{r}
+# IDs of randomized participants
+randomized_ids <- raw_dt[!is.na(rand_id), .(rec_id, rand_id)]
+
+# Relevant columns to the analysis
+cols_to_keep <- c(
+  "rec_id", "rand_id", "redcap_event_name", "redcap_repeat_instance", 
+  "besoeg_dato", "madrs10_total_dag0", "madrs_total_dag4",
+  "madrs10_total_dag7", "madrs_total_dag14", "madrs10_total_dag28",
+  "forsoegsmedicin_startdato"
+  )
+
+# Relevant visit events
+visit_events <- c(
+  "dag_0_arm_1", "dag_4_arm_1", "dag_7_arm_1", 
+  "dag_14_arm_1", "dag_28_arm_1"
+  )
+
+# Keep only relevant data
+dt <- raw_dt[rec_id %in% randomized_ids$rec_id &
+               redcap_event_name %in% visit_events, 
+             ..cols_to_keep]
+```
+
+## Derive analysis variables
+
+Determine Day 0 and visit windows
+```{r}
+# Format visit variable
+dt[, c_visit := gsub("_arm_1|_", "", redcap_event_name)]
+dt[, n_visit := as.numeric(gsub("_arm_1|dag_", "", redcap_event_name))]
+
+# Compute day 0 as the day prior to medication start
+dt[, d_d0 := as.Date(forsoegsmedicin_startdato) -1]
+# Check that no participants have multiple day 0's
+stopifnot(
+  nrow(dt[!is.na(d_d0), .N, c("rec_id","d_d0")][N>1]) == 0
+  )
+# Add the day 0 date to all rows for each participant
+dt[, d_d0 := d_d0[!is.na(d_d0)], by = rec_id]
+
+# Add target date for each visit
+dt[, d_target := d_d0 + n_visit]
+
+# Add visit windows
+# Day 4, 7, 14: +/- 2 days
+dt[c_visit %in% c("dag4","dag7","dag14"), c("d_lvw", "d_uvw") := list(d_target -2, d_target + 2)]
+# Day 28: +/- 28 days
+dt[c_visit == "dag28", c("d_lvw", "d_uvw") := list(d_target - 4, d_target + 4)]
+
+# Compute in window status for all outcome measurements
+dt[, in_window := 1*(besoeg_dato >= d_lvw & besoeg_dato <= d_uvw)]
+```
+
+Derive MADRS-10 total score for all visits
+```{r}
+# Collect MADRS-10 total scores in one column
+# Check that no row have more than one outcome measurement
+stopifnot(
+  all(rowSums(!is.na(dt[, c("madrs10_total_dag0", "madrs_total_dag4", "madrs10_total_dag7",
+                            "madrs_total_dag14", "madrs10_total_dag28")])) %in% c(0, 1))
+  )
+dt[, madrs := fcoalesce(madrs10_total_dag0, madrs_total_dag4, madrs10_total_dag7,
+                          madrs_total_dag14, madrs10_total_dag28)]
+
+# Replace outcome value with NA if recorded outside the visit window
+dt[c_visit != "dag0" & in_window == 0, madrs := NA]
+
+# Choose last recorded observation in window for all visits
+setorder(dt, rec_id, n_visit, -in_window, -redcap_repeat_instance)
+dt2 <- dt[!is.na(madrs), .SD[1], .(rec_id, c_visit)]
+
+# Check that all individuals have a madrs score on day 0
+stopifnot(
+  nrow(dt2[!is.na(madrs) & c_visit == "dag0", .SD[1], rec_id]) == 
+    dt[!is.na(rand_id), uniqueN(rand_id)]
+  )
+
+# Augment data such that all randomized participants have one row per visit
+id_x_visit <- expand.grid(rec_id = unique(dt2$rec_id), 
+                          c_visit = unique(dt2$c_visit))
+dt3 <- merge(dt2, id_x_visit, all.y = TRUE)
+```
+
+Derive baseline MADRS-10 total score and change-from-baseline scores
+```{r}
+# Add baseline  score to all rows
+dt3[, madrs_d0 := madrs[c_visit == "dag0"], rec_id]
+# Compute change from baseline scores
+dt3[, chgbl := madrs - madrs_d0]
+```
+
+Derive FAS population flag and restrict data to day 4 and 7 visits
+```{r}
+# Compute FAS membership
+dt3[, i_FAS := 1*(sum(in_window[c_visit != "dag0"] * madrs[c_visit != "dag0"], na.rm = TRUE) > 0), by = rec_id]
+
+# Keep only day 4 and 7 rows from individuals in FAS
+dt4 <- dt3[i_FAS == 1 & c_visit %in% c("dag4", "dag7"), .(rec_id, chgbl, madrs_d0, c_visit, i_FAS)]
+```
+
+Add treatment variable
+```{r}
+adat <- merge(dt4, trt_dt, by.x = "rec_id", by.y = "ID")
+```
+
+Convert variables to factors as required by mmrm()
+```{r}
+# Convert IDs to factor
+adat[, rec_id := factor(rec_id)]
+
+# Drop unused levels of c_visit, such that only day 4 and 7 remain
+adat[, c_visit := droplevels(c_visit)]
+
+# Convert treatment to factor with Placebo as reference
+adat[, trt := factor(trt)]
+adat[, trt := relevel(trt, ref = grep("^[Pp]lacebo", levels(trt), value = TRUE))]
+```
+
+# Statistical analysis
+
+Fit MMRM model with change-from-baseline MADRS-10 total score
+```{r}
+fit <- mmrm(formula = chgbl ~ (madrs_d0 + trt) * c_visit + us(c_visit | rec_id), 
+            data = adat,
+            reml = TRUE,
+            method = "Satterthwaite")
+summary(fit)
+```
+
+Compute estimated marginal means and treatment effect adjusted to the FAS population
+```{r}
+# Obtain estimated means 
+(emm_trt <- emmeans(fit, ~ trt | c_visit, data = adat))
+
+# Treatment contrast (Dexamethasone - Placebo) 
+(trt_contrast <- contrast(emm_trt, method = "revpairwise", by = "c_visit", infer =TRUE))
+```
+
+# Output preparation
+
+Count number of participants contributing to the analysis, in FAS and with missing
+outcome values on day 7 per treatment arm
+```{r}
+# FAS, N, Miss
+n_summary <- adat[, .(Visit = "Day 7",
+                   FAS = uniqueN(rec_id),
+                   N = uniqueN(rec_id[!is.na(chgbl)]),
+                   Miss = sum(is.na(chgbl[c_visit == "dag7"]))), trt]
+```
+
+Extract and format estimated marginal means for day 7
+```{r}
+# Extract results related to Day 7 and keep only relevant columns
+emm_day7 <- as.data.table(subset(emm_trt, c_visit == "dag7"))
+emm_out <- emm_day7[, .(trt, emmean, SE, lower.CL, upper.CL)]
+
+# Format estimated mean and 95% CI as a character string
+emm_out[, `Est. Mean (95% CI)` := sprintf("%.1f (%.1f; %.1f)", emmean, lower.CL, upper.CL)]
+
+# Rename columns
+setnames(
+  emm_out,
+  c("SE", "lower.CL", "upper.CL"), 
+  c("em_se", "em_lwr", "em_upr")
+  )
+
+# Preview output
+emm_out
+```
+
+Extract and format estimated treatment effect for day 7
+```{r}
+# Extract treatment effect on day 7
+contrast_day7 <- as.data.table(subset(trt_contrast, c_visit == "dag7"))
+
+# Format effect and 95% CI as character string
+contrast_day7[, `Effect (95% CI)` := sprintf("%.2f (%.2f; %.2f)", estimate, lower.CL, upper.CL)]
+
+# Add a dummy treatment variable such that the treatment effect row can be merged 
+# correctly under the Dexmethasone group in the output table
+contrast_day7[, trt := factor(grep("^[Dd]exameth", levels(trt_dt$trt), value = TRUE), levels = levels(trt_dt$trt))]
+
+# Keep only relevant columns
+contrast_out <- contrast_day7[, .(trt, estimate, SE, lower.CL, upper.CL, `Effect (95% CI)`, p.value)]
+
+contrast_out
+# Format p-value as character string
+contrast_out[, `p-value` := ifelse(p.value < 0.001, 
+                                   "<0.001", 
+                                   sprintf("%.3f", p.value))]
+
+# Rename columns
+setnames(
+  contrast_out, 
+  c("estimate", "SE", "lower.CL", "upper.CL", "p.value"), 
+  c("effect", "eff_se", "eff_lwr", "eff_upr", "p_val")
+  )
+
+# Preview output
+contrast_out
+```
+
+Create output table
+```{r}
+# Merge n_summary, emm_out and contrast_out
+final_output <- merge(merge(n_summary, emm_out), contrast_out, all.x = TRUE)
+
+# Rename treatment variable
+setnames(final_output, "trt", "Treatment")
+
+# Inspect classes
+str(final_output)
+class(final_output)
+```
+
+Save output to the path specified by the output_path parameter
+```{r}
+saveRDS(final_output, params$output_path)
+```
+
+## Appendix
+```{r}
+sessionInfo()
+```

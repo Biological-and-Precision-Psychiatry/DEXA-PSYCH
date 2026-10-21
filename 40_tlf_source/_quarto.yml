@@ -1,0 +1,29 @@
+project:
+  type: book
+
+book: 
+  search: false
+  sidebar: 
+    logo: dexa-psych-logo.png
+  favicon: dexa-psych-logo.png
+  repo-url: https://github.com/Biological-and-Precision-Psychiatry/DEXA-PSYCH
+  repo-branch: main
+  repo-actions: [issue]
+  
+execute:
+  freeze: auto
+
+format:
+  html:
+    include-after-body: toc-scroll.html
+    theme:
+      - cosmo
+      - custom.scss
+  pdf:
+    documentclass: scrreprt
+    include-in-header:
+      - text: |
+          \usepackage{float}
+
+profile:
+  default: all

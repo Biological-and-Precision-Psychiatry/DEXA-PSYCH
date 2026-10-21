@@ -1,0 +1,93 @@
+﻿type;key;footer
+scale;MADRS~10~;MADRS~10~: 10-item Montgomery-Åsberg Depression Rating Scale (range: 0 to 60 with higher scores indicating more severe depression.)
+scale;HAM-D~17~;HAM-D~17~: 17-item Hamilton Depression Rating Scale (range: 0 to 52 with higher scores indicating more severe depression.)
+scale;MDI;MDI: Major Depression Inventory (range: 0 to 50 with higher scores indicating more severe depression.)
+scale;MADRS~6~;MADRS~6~: 6-item Montgomery-Åsberg Depression Rating Scale (range: 0 to 36 with higher scores indicating more severe depression.)
+scale;HAM-D~6~;HAM-D~6~: 6-item Hamilton Depression Rating Scale (range: 0 to 22 with higher scores indicating more severe depression.)
+scale;HAM-A;HAM-A: 14-item Hamilton Anxiety Rating Scale (range: 0 to 56 with higher scores indicating more severe anxiety.)
+scale;FACIT-F;FACIT-F: 13-item Functional Assessment of Chronic Illness Therapy-Fatigue scale (range: 0 to 52 with higher scores indicating less fatigue.). FACIT-F was included in the trial protocol only after patient inclusion had begun (protocol ver. 1.2., approved 19-02-2024) so the FAS for this outcome includes fewer subjects than for other secondary outcomes.
+scale;EQ-5D-5L Utility Index;EQ-5D-5L Utility Index: 5-item scale (range: -0.758 to 1 with higher scores indicating better health related quality of life.)
+scale;EQ-5D-5L Visual-Analogue Scale;EQ-5D-5L Visual-Analogue Scale: Range: 0 to 100 with higher scores indicating better health related quality of life.
+scale;GAF;GAF: Global Assessment of Functioning (range: 0-100 with higher scores indicating better functioning.)
+scale;SAPS;SAPS: 34-item Scale for the Assessment of Positive Symptoms (range: 0 to 170 with higher scores indicating more severe psychotic symptoms.)
+scale;GTI;GTI: 8-item Glucocorticoid Toxicity Index (range: -35 to 410 with higher scores indicating more severe toxicity, modified from original scale to not include the “bone density” item.)
+scale;YMRS;YMRS: 11-item Youngs Mania Rating Scale (range: 0 to 60 with higher scores indicating more severe manic symptoms.)
+scale;C-SSRS - Suicidal thoughts;C-SSRS - Suicidal thoughts: A participant is defined as having suicidal thoughts based on the Columbia Suicide Severity Rating Scale (C-SSRS) if the participant endorses item 1 and/or 2 on the C-SSRS
+scale;C-SSRS - Suicidal ideation;C-SSRS - Suicidal ideation: The Columbia Suicide Severity Rating Scale (C-SSRS) derived suicidal ideation score (range 0-5) is calculated based on C-SSRS items 1-5, with each item endorsed (“Yes”) adding 1 point to the score
+scale;C-SSRS - Suicidal intensity;C-SSRS - Suicidal intensity: The Columbia Suicide Severity Rating Scale (C-SSRS) derived suicidal intensity score (range 0-25) is calculated based on C-SSRS items 6-10, with each item being scored from 1-5. If participants do not endorse item 1 or 2, the suicidal intensity score is set to 0 (i.e., no suicidal thoughts present)
+scale;CRP;CRP: high sensitivity C-reactive protein (unit: mg/L, lower limit of quantification (LLOQ): 0.30 mg/L)
+scale;Leucocytes;Leucocyte count (unit: x10^9^/L)
+scale;Neutrofiles;Neutrofile count (unit: x10^9^/L)
+scale;Glucose;Plasma glucose (unit: mmol/L)
+scale;HbA~1c~;HbA~1c~: Hemoglobin A~1c~ (unit: mmol/mol)
+scale;TSH;TSH: Thyroid-Stimulating Hormone (10^-3^ IU/L)
+scale;LDL;LDL: Low-Density Lipoprotein cholesterol (unit: mmol/L)
+scale;HDL;HDL: High-Density Lipoprotein cholesterol (unit: mmol/L)
+scale;Total Cholesterol;Total cholesterol (unit: mmol/L)
+scale;Triglycerides;Triglycerides (unit: mmol/L)
+scale;Potassium;Potassium (unit: mmol/L)
+scale;Createnine;Createnine (unit: $\mu$mol/L)
+scale;Sodium;Sodium (unit: mmol/L)
+scale;Alanine Aminotransferase;Alanine Aminotransferase (unit: U/L)
+scale;Phosphatase;Phosphatase (unit: U/L)
+scale;QTc;QTc: Corrected QT-interval (unit: ms)
+scale;Heart Rate;Heart rate (beats per minute)
+scale;Systolic Blood Pressure;Systolic blood pressure (unit: mmHg)
+scale;Diastolic Blood Pressure;Diastolic blood pressure (unit: mmHg)
+scale;Body Weight;Body Weight (unit: kg)
+scale;Body Temperature;"Body Temperature (measured tympanically; unit: celsius)"
+scale;Breathing Frequency;Breathing Frequency (units: breaths per minute)
+abbreviation;MMRM;MMRM: Mixed Model for Repeated Measurements
+abbreviation;ANCOVA;ANCOVA: Analysis of Covariance
+abbreviation;FAS;FAS: Full Analysis Set
+abbreviation;SAS;SAS: Safety Analysis Set
+abbreviation;N;N: Subjects contributing to analysis
+abbreviation;SD;SD: Standard Deviation
+abbreviation;IQR;IQR: Interquartile range
+abbreviation;Miss;Miss: Subjects with missing outcome value
+abbreviation;gCV;gCV: Geometric coefficient of variation
+abbreviation;gMean;gMean: Geometric mean
+abbreviation;gSD;gSD: Geometric standard deviation
+abbreviation;Est. Mean;Est. Mean: Estimated mean adjusted to the baseline population
+abbreviation;Prop;Prop: Proportion
+abbreviation;Est. Prob;Est. Prob: Estimated probability adjusted to the baseline population
+abbreviation;Effect;Effect: Estimated treatment difference for Dexamethasone - Placebo
+abbreviation;OR;OR: Estimated odds ratio for Dexamethasone / Placebo
+abbreviation;CI;CI: Confidence Interval
+abbreviation;>LLOQ;>LLOQ: Subjects with values above the lower limit of quantification
+abbreviation;ND;ND: Not defined
+abbreviation;Inf;Inf: Infinity
+abbreviation;p-het;p-het: *p*-value for test of treatment heterogeneity
+abbreviation;BMI;BMI: Body Mass Index (kg/m^2^) 
+abbreviation;In window;In window: Observation recorded inside visit window
+abbreviation;Out of window;Out of window: Observation recoded outside visit window
+abbreviation;Not recorded;Not recorded: Observation not recorded
+abbreviation;TRD;TRD:  Treatment-resistant depression is defined as two or more attempts of different antidepressants within the current depressive episode
+abbreviation;Depression;Depression: Moderate depression is defined as MADRS~10~ $\leq$ 29 and severe depression is defined as MADRS~10~ $\geq$ 30
+abbreviation;crp;CRP: high sensitivity C-reactive protein (unit: mg/L)
+abbreviation;CRP;CRP: high sensitivity C-reactive protein (unit: mg/L)
+definition;responder;A responder is defined by the response score being reduced by at least 50% from baseline (Day 0).
+definition;remission;Remission is defined by a MADRS~10~ score $\leq$ 10.
+definition;sust_resp;Sustained response is defined by the response score being reduced by at least 50% from baseline (Day 0) at all visits from Day 7 up to and including the current visit.
+qualifier;mult_visit;Data on each post-baseline visit are analyzed in separate models.
+qualifier;policy;Estimand: Treatment policy.
+qualifier;efficacy;Estimand: Treatment efficacy.
+qualifier;any_treatment;Presentation includes measurements regardless of on-treatment status.
+qualifier;on_treatment;Presentation includes on-treatment measurements.
+qualifier;FAS;Subjects included: Full Analysis Set.
+qualifier;SAS;Subjects included: Safety Analysis Set.
+analysis;MMRM;Analysis is a Mixed Model for Repeated Measurements for post-baseline measurements with main effects of treatment and baseline outcome nested within visit using an unstructured visit-by-visit within-subjects residual variance-covariance matrix. Denominator degrees of freedom for _t_ and _F_ statistics are calculated using Satterthwaite's method.
+analysis;subgroup-MMRM;Analysis is a Mixed Model for Repeated Measurements for post-baseline measurements with effects of baseline outcome, treatment, subgroup, and treatment-subgroup interaction nested within visit using an unstructured visit-by-visit within-subjects residual variance-covariance matrix. Denominator degrees of freedom for _t_ and _F_ statistics are calculated using Satterthwaite's method.
+analysis;logistic_reg_cca;Statistical model is a logistic regression for post-baseline measurements with main effects of treatment and baseline outcome. Confidence intervals and p-values for the odds ratio are based on the likelihood ratio statistic.
+analysis;logistic_reg_sipw;Statistical model is a logistic regression for post-baseline measurements with main effects of treatment and baseline outcome. Missing values are adjusted for using inverse probability of censoring weighting. Confidence intervals and p-values for the odds ratio are based on the likelihood ratio statistic.
+analysis;logistic_reg_mmrm;Statistical model is a logistic regression for post-baseline measurements with main effects of treatment and baseline outcome. Missing values are imputed using an MMRM for the corresponding continuous outcome. Confidence intervals and p-values for the odds ratio are based on the likelihood ratio statistic.
+analysis;uncond_exact_cca;Statistical analysis is an unconditional exact test. 
+analysis;uncond_exact_mmrm;Statistical analysis is an unconditional exact test. Missing values are imputed using an MMRM for the corresponding continuous outcome.
+analysis;ttest;Statistical model is a two-sample _t_-test for post-baseline measurements comparing treatment arms. 
+analysis;ANCOVA;Statistical model is an ANCOVA for post-baseline measurements with main effects of treatment and baseline outcome.
+analysis;sipw-ANCOVA;Statistical model is an ANCOVA for post-baseline measurements with main effects of treatment and baseline outcome. Missing values are corrected for using stabilized inverse probability of censoring weighting.
+analysis;cens-ANCOVA;Statistical model is a censored log-normal model for post-baseline measurements with main effects of treatment and baseline outcome.
+analysis;cum-sipw-ANCOVA;Statistical model is an ANCOVA for post-baseline measurements with main effects of treatment and baseline outcome. Missing values are corrected for using stabilized cumulative inverse probability of censoring weighting and confidence intervals are based on the bootstrap-_t_ method with 10 000 re-samples.
+analysis;logistic;Statistical model is a logistic regression for post-baseline measurements with main effect of treatment. Confidence intervals and p-values for the odds ratio are based on the likelihood ratio statistic.
+analysis;tipping1;One-way tipping point analysis in which an adjustment ($\delta$) is applied to the mean outcome of subjects with missing values in each arm separately with no penalty applied in the other arm. The figure shows the estimated treatment difference (Dexamethasone - Placebo) and its 95% CI for a range of $\delta$ values applied separately in each arm. A positive $\delta$ in the active arm or a negative $\delta$ in the placebo arm acts in the conservative direction, i.e., against the hypothesis of a beneficial treatment effect.
+analysis;tipping2;Two-way tipping point analysis in which adjustments $\delta_{\text{Dexamethasone}}$ and $\delta_{\text{Placebo}}$ are applied to the mean outcome of subjects with missing values in each arm simultaneously. The contour plot shows the upper 95% confidence limit of the estimated treatment difference (ETD, Dexamethasone - Placebo) across a grid of $\delta$-values. The black solid contour highlights the values of ($\delta_{\text{Dexamethasone}}, \delta_{\text{Placebo}}$) at which the upper 95% CI equals zero, i.e., where the ETD tips between significance and non-significance. A positive $\delta_{\text{Dexamethasone}}$ and a negative $\delta_{\text{Placebo}}$ act in the conservative direction, i.e., against the hypothesis of a beneficial treatment effect.

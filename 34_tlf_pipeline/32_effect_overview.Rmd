@@ -1,0 +1,762 @@
+---
+title: "Effect overview forest plots"
+author: "Rune Haubo B Christensen & Eva Nina S Wandall"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+  pdf_document:
+    toc: true
+header-includes: 
+- \usepackage{float}
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup0, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, collapse = TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+options(knitr.kable.NA = '')
+
+# wider output when knit'ing:
+if (isTRUE(getOption("knitr.in.progress")) && !knitr::is_latex_output()) {
+  options(width = 110)
+}
+```
+
+
+## Setup 
+
+```{r setup, results='hide', message=FALSE, warning=FALSE}
+library(data.table)
+library(ggplot2)
+library(CRP)
+library(forestploter) # for forest plots
+library(grid)
+library(scales)
+library(gt)
+
+source("20_functions/source_dir.R")
+source_dir("20_functions")
+
+tlf_reg <- get_metadata()
+```
+
+### Get data
+
+```{r}
+# Get extended metadata rows for primary and key secondary endpoints
+# Based on data extracted in 30_hierarchical_testing.Rmd
+th_reg <- readRDS("50_output_db/outputs/summary_primary_key_secondary_analyses.rds")
+
+# Get treatment column names
+dexa_col <- names(th_reg)[th_reg[, grepl("^[Dd]exa", names(th_reg))]]
+plac_col <- names(th_reg)[th_reg[, grepl("^[Pp]lacebo", names(th_reg))]]
+
+# Make column with spaces where forest plot shall appear
+th_reg[, plot := paste(rep(" ", 20), collapse = " ")]
+
+# Format
+th_reg[, Visit := paste("Day", visit)]
+
+# Mark primary endpoint
+th_reg[endpoint_level == "Primary", Visit := paste0(Visit, "*")]
+
+# Format p-value
+th_reg[`p-value`== "Not tested", `p-value` := "-"]
+```
+
+## Make forest plots
+
+### General settings for forest plot
+
+```{r}
+# Set background to white and summary diamond to black
+tm <- forest_theme(core = list(bg_params = list(fill = c("white"))),
+                   vertline_lty = "dotted")
+```
+
+
+### Summary forest plot for primary and key secondary continuous endpoints
+
+```{r}
+# Get data rows for continuous endpoints
+cont_dt <- th_reg[outcome_type == "cont"]
+
+# Select columns for figure
+cont_cols <- c("variable_label" ,"Visit", dexa_col, plac_col, "plot", "Effect", "p-value")
+cont_pdat <- cont_dt[, .SD, .SDcols = cont_cols]
+
+# Set column names
+setnames(cont_pdat, 
+         c("variable_label", "Effect",          "plot"),
+         c("Outcome",        "Effect (95% CI)", " "))
+
+# Format outcome names
+cont_pdat[, Outcome := gsub("~", " ", Outcome, fixed = TRUE)]
+cont_pdat[, Outcome := gsub("Visual-Analogue Scale", "VAS", Outcome, fixed = TRUE)]
+cont_pdat[, Outcome := trimws(Outcome)]
+cont_pdat
+```
+
+Define x-axis limits for forest plot based on confidence interval range
+```{r}
+# Lower limit for x-axis
+ci_min <- cont_dt[, min(lower.CL, na.rm = TRUE)]
+xmin <- pmin(0, 5 * floor(ci_min / 5))
+
+# Upper limit for x-axis
+ci_max <- cont_dt[, max(upper.CL, na.rm = TRUE)]
+xmax <- pmax(0, 5 * ceiling(ci_max / 5))
+  
+# X-axis limits for plot
+xlims <- c(xmin, xmax)
+
+# Select appropriate x-axis ticks with the range of xlims
+xticks <- pretty(xlims, n = 6)
+xticks <- xticks[xticks >= xlims[1] & xticks <= xlims[2]]
+```
+
+Make forest plot using `forestploter::forest`:
+```{r}
+# Initiate forestplot:
+cont_p <- forest(data      = cont_pdat,
+                 theme     = tm,
+                 est       = cont_dt[, estimate],
+                 lower     = cont_dt[, lower.CL],
+                 upper     = cont_dt[, upper.CL],
+                 xlim      = xlims,
+                 ticks_at  = xticks,
+                 ci_column = 5)
+# Adjust appearance of plot:
+cont_p <- insert_text(cont_p, 
+                      text = "Est. Mean (95% CI)", # additional header over Dexa/Placebo
+                      part = "header", 
+                      row  = 1,
+                      col  = 3:4,
+                      gp   = gpar(fontface = "bold"))
+cont_p <- add_border(cont_p, # h-line over Dexa Plac no. subjects
+                     part = "header", 
+                     row  = 1,
+                     col  = 3:4,
+                     gp   = gpar(lwd = .5))
+cont_p <- add_border(cont_p, # hline below header
+                     part = "header", 
+                     row  = 2,
+                     gp   = gpar(lwd = .5))
+cont_p <- edit_plot(cont_p, # right-align p-value column
+                    col   = 7, 
+                    which = "text", 
+                    hjust = unit(1, "npc"), 
+                    x     = unit(0.9, "npc"))
+```
+
+```{r fig.width=get_wh(cont_p)["width"], fig.height=get_wh(cont_p)["height"]}
+cont_p
+```
+
+
+### Summary forest plot for key secondary binary endpoints
+
+```{r}
+# Get data for binary endpoints
+bin_dt <- th_reg[outcome_type == "binary"]
+
+# Select columns for figure
+bincols <- c("oc_kind_label", "Visit", dexa_col, plac_col, "plot", 
+              "Effect", "p-value")
+bin_pdata <- bin_dt[, .SD, .SDcols = bincols]
+
+# Set column names
+setnames(bin_pdata, 
+         c("oc_kind_label", "Effect",      "plot"), 
+         c("Outcome",       "OR (95% CI)", " "))
+
+# Format Outcome variables
+bin_pdata[Outcome == "Responder", Outcome := paste0(Outcome,"†")]
+bin_pdata[Outcome == "Remission", Outcome := paste0(Outcome, "‡")]
+bin_pdata[Outcome == "Sustained response", Outcome := paste0(Outcome,"§")]
+bin_pdata
+```
+
+Make x-axis limits and ticks based on confidence limit range
+```{r}
+# X-axis limits based on CI limits and with additional margin
+ci_range <- range(c(bin_dt[, lower.CL], bin_dt[, upper.CL]), na.rm = TRUE)
+xlims <- c(min(ci_range[1], 1) * 0.8, 
+           min(ci_range[2], 400) * 1.25) 
+
+# Select appropriate tick marks within xlims range
+xticks <- scales::breaks_log(n = 6, base = 2)(xlims)
+xticks <- c(1, xticks[xticks >= xlims[1] & xticks <= xlims[2]])
+```
+
+Make forest plot using forestploter::forest:
+```{r}
+# Initiate forest plot:
+bin_p <- forest(data      = bin_pdata,
+                theme     = tm,
+                est       = bin_dt[, estimate],
+                lower     = bin_dt[, lower.CL],
+                upper     = bin_dt[, upper.CL],
+                ref_line  = 1,
+                x_trans   = "log",
+                xlim      = xlims, 
+                ticks_at  = xticks,
+                ci_column = 5)
+# Adjust appearance of plot:
+bin_p <- insert_text(bin_p, 
+                     text = "Cases / N", # additional header above Dexa/Placebo cols
+                     part = "header", 
+                     row  = 1,
+                     col  = 3:4,
+                     gp   = gpar(fontface = "bold"))
+bin_p <- add_border(bin_p, # h-line over Dexa Plac no. subjects
+                    part  = "header", 
+                    row   = 1,
+                    col   = 3:4,
+                    gp    = gpar(lwd = .5))
+bin_p <- add_border(bin_p, # hline below header
+                    part  = "header", 
+                    row   = 2,
+                    gp    = gpar(lwd = .5))
+bin_p <- edit_plot(bin_p, # right-align p-value column
+                   col    = 7, 
+                   which  = "text", 
+                   hjust  = unit(1, "npc"), 
+                   x      = unit(0.9, "npc"))
+```
+
+```{r fig.width=get_wh(bin_p)["width"], fig.height=get_wh(bin_p)["height"]}
+# Return the plot:
+bin_p
+```
+
+
+## Save figures
+
+Function that expands a forestplot to a specified same width
+```{r}
+#' Expand a forest plot to a specified width
+#'
+#' Increases the width of a forestploter plot so it matches a given total
+#' width. The extra space is distributed equally across all columns except
+#' the first. Plots that are already at least as wide as `width` are
+#' returned unchanged. A warning is flagged if the plot is already wider than 
+#' `width`.
+#'
+#' @param p A forest plot created with [forestploter::forest()].
+#' @param width Target total width in inches.
+#'
+#' @return The forest plot `p` with adjusted column widths.
+expand_to_width <- function(p, width) {
+  wh <- get_wh(p, unit = "in")
+  extra <- width - wh["width"]
+  if (extra < 0){
+    warning("Plot is wider than target width.")
+  }
+  if (extra > 0) {
+    n <- length(p$widths)
+    p$widths[-1] <- p$widths[-1] + unit(extra / (n - 1), "in")
+  }
+  p
+}
+```
+
+Expand figures to the width of the forest plot with max width:
+```{r}
+# Width of forestplot with binary endpoints
+p_wh_bin <- get_wh(bin_p)
+
+# Width of forestplot with continuous endpoints
+p_wh_cont <- get_wh(cont_p)
+
+# Target width of both plots
+p_w <- max(p_wh_bin["width"], p_wh_cont["width"])
+
+# Expand plots to target width
+cont_p <- expand_to_width(cont_p, p_w)
+bin_p  <- expand_to_width(bin_p, p_w)
+```
+
+Save summary of key secondary continuous endpoints:
+```{r}
+# Metadata row for continuous endpoints:
+regi_cont <- tlf_reg[file_stem == "compare_effects_primary_key_secondary_cont"]
+
+# Add source tables to cross-reference library:
+add_to_crossref(endpoint_id = regi_cont[, endpoint_id],
+                key         = cont_dt[, paste(variable_label, "at Day", visit)],
+                source      = cont_dt[, endpoint_id])
+
+# Make file paths:
+png_path_cont <- regi_cont[, file.path(folder, paste0(file_stem, ".png"))]
+pdf_path_cont <- regi_cont[, file.path(folder, paste0(file_stem, ".pdf"))]
+
+# Save figures:
+cowplot::ggsave2(filename = png_path_cont, cont_p, width = p_w, height = p_wh_cont["height"])
+cowplot::ggsave2(filename = pdf_path_cont, cont_p, width = p_w, height = p_wh_cont["height"])
+```
+
+Save summary of key secondary binary endpoints
+```{r}
+# Metadata row for binary endpoints:
+regi_bin <- tlf_reg[file_stem == "compare_effects_key_secondary_binary"]
+
+# Add source tables to cross-reference library:
+add_to_crossref(endpoint_id = regi_bin[, endpoint_id],
+                key         = bin_dt[, paste(oc_kind_label, "at Day", visit)],
+                source      = bin_dt[, endpoint_id])
+
+# Make file paths:
+png_path_bin <- regi_bin[, file.path(folder, paste0(file_stem, ".png"))]
+pdf_path_bin <- regi_bin[, file.path(folder, paste0(file_stem, ".pdf"))]
+
+# Save figures:
+cowplot::ggsave2(filename = png_path_bin, bin_p, width = p_w, height = p_wh_bin["height"])
+cowplot::ggsave2(filename = pdf_path_bin, bin_p, width = p_w, height = p_wh_bin["height"])
+```
+
+
+## Safety outcomes
+
+```{r, include=FALSE, eval=FALSE}
+tlf_reg[, .N, .(chapter, transformation, outcome_var)]
+outc_var <- outc_vars[1]
+```
+
+
+### SAPS, GTI, YMRS, and C-SSRS
+
+Get data for SAPS, GTI, YMRS, and C-SSRS:
+```{r}
+# Get metadata for vital sign outcomes:
+outc_vars <- c("saps_total", "gti_total", "ymrs_total", 
+               "cssrs_suicide_thoughts", "cssrs_ideation")
+stopifnot(tlf_reg[, all(outc_vars %in% unique(outcome_var))])
+tab <- tlf_reg[outcome_var %in% outc_vars &
+                 (analysis == "logistic" | outcome_kind == "chgbl") &
+                 role == "Primary" &
+                 tlf_type == "table", 
+               .(outcome_var, outcome_label, visit, endpoint_id, analysis,
+                 variable_label)]
+tab[, row_order := seq_len(.N)]
+
+# Extract data:
+d1 <- lapply(seq_len(nrow(tab)), function(i) { # i <- 1
+  regi <- tlf_reg[endpoint_id == tab[i, endpoint_id]]
+  res <- get_dt_table(regi)
+  res2 <- if(tab[i, analysis %in% "logistic"]) {
+    res[Visit == paste("Day", tab[i, visit]), 
+        .(Treatment, `Est. Mean (95% CI)` = `Est. Prob (95% CI)`, 
+          `Effect (95% CI)` = `OR (95% CI)`, estimate = odds.ratio, 
+          lower.CL = lwr.lrt, upper.CL = upr.lrt, `p-value`, trt)] 
+  } else { 
+    res[Visit == paste("Day", tab[i, visit]), 
+        .(Treatment, `Est. Mean (95% CI)`, `Effect (95% CI)`, estimate, 
+          lower.CL, upper.CL, `p-value`, trt)]
+  }
+  cbind(tab[i], res2)
+}) |> rbindlist()
+
+# Get treatment levels:
+trt_levs <- get_trt_levs(d1)
+ref_trt_lev <- trt_levs["reference"] |> unname()
+dexa_trt_lev <- trt_levs["active"] |> unname()
+trt_levs <- c(dexa_trt_lev, ref_trt_lev)
+
+# Estimated means data:
+d_emm <- dcast(d1, outcome_var + visit ~ Treatment, value.var = "Est. Mean (95% CI)")
+
+# Treatment effect data:
+d_eff <- d1[grepl("[Dd]exa", Treatment)]
+
+# All data:
+.d <- merge(d_emm, d_eff, by = c("outcome_var", "visit"))[order(row_order)]
+.d[, Visit := paste("Day", visit)]
+
+# Conditional outcome formatting:
+.d[, Outcome := variable_label]
+.d[, Outcome := gsub(" - Suicidal", "", Outcome)]
+.d[analysis == "logistic", Outcome := paste0(Outcome, "*")]
+```
+
+
+Safety rating scales summary `gt` table:
+```{r}
+# Get data:
+tab_cols <- c("Outcome", "Visit", dexa_trt_lev, ref_trt_lev, 
+                 "Effect (95% CI)", "p-value", "endpoint_id")
+.dd <- .d[, .SD, .SDcols = tab_cols]
+.dd[, `Source table` := paste0("[-@sec-", endpoint_id, "]")]
+.dd[, endpoint_id := NULL]
+
+# Make gt-table:
+gt_tab <- gt(.dd) |> 
+  tab_spanner(label = "Est. Means (95% CI)", columns = trt_levs) |>
+  set_gt_style()  |>
+  # Include border line under spanner columns
+  tab_options(
+    column_labels.border.bottom.style = "solid",
+    column_labels.border.bottom.color = "#333333",
+    column_labels.border.bottom.width = px(1)
+  ) |> 
+  # Left align first column
+  tab_style(
+    style = cell_text(align = "left"),
+    locations = list(
+      cells_body(columns = "Outcome"),
+      cells_column_labels(columns = "Outcome")
+    )
+  )
+
+# Make footers:
+table_footers <- get_footers()
+
+# Scales:
+sc_foot <- sapply(seq_len(.d[, .N]), function(i) { # i <- 1
+  outc <- .d[i, variable_label]
+  table_footers[sapply(key, grepl, x = outc), footer][1]
+}) |> unique()
+
+# Abbreviations:
+key_list <- c("Est. Mean", "CI", "Effect")
+abbrev_foot <- sapply(key_list, function(k) {
+  table_footers[key == k, footer]
+}, USE.NAMES = FALSE)
+
+# Add footers to gt-table:
+foot_list <- list(
+  paste0(paste(sc_foot, collapse = ", "), "."),
+  paste0(paste(abbrev_foot, collapse = ", "), "."),
+  table_footers[type == "qualifier" & key == "SAS", footer],
+  paste0("*: Analysis is a logisitic regression model presented as estimated", 
+         " probabilities and Odds Ratio for Dexamethasone / Placebo."))
+
+gt_tab <- add_footer_lines_to_gt(gt_tab, footer_list = foot_list)
+gt_tab
+```
+
+Save `gt` table
+```{r}
+save_gt_table(gt_tab,
+              regi = tlf_reg[file_stem == "safety_rating_scales_overview"],
+              verbose = TRUE)
+```
+
+
+### Vital signs
+
+Get data for vital signs:
+```{r}
+# Get metadata for vital sign outcomes:
+outc_vars <- tlf_reg[chapter == "vital signs", unique(outcome_var)]
+tab <- tlf_reg[outcome_var %in% outc_vars &
+                 role == "Primary" &
+                 tlf_type == "table", 
+                .(outcome_var, outcome_label, visit, endpoint_id, analysis)]
+tab[, row_order := seq_len(.N)]
+
+# Extract data:
+d1 <- lapply(seq_len(nrow(tab)), function(i) { # i <- 1
+  regi <- tlf_reg[endpoint_id == tab[i, endpoint_id]]
+  res <- get_dt_table(regi)
+  res <- res[Visit == paste("Day", tab[i, visit]), 
+             .(Treatment, `Est. Mean (95% CI)`, `Effect (95% CI)`, estimate, 
+               lower.CL, upper.CL, `p-value`, trt)]
+  cbind(tab[i], res)
+}) |> rbindlist()
+
+# Get treatment levels:
+trt_levs <- get_trt_levs(d1)
+ref_trt_lev <- trt_levs["reference"] |> unname()
+dexa_trt_lev <- trt_levs["active"] |> unname()
+trt_levs <- c(dexa_trt_lev, ref_trt_lev)
+
+# Estimated means data:
+d_emm <- dcast(d1, outcome_var  ~ Treatment, value.var = "Est. Mean (95% CI)")
+
+# Treatment effect data:
+# eff_cols <- c("outcome_var", "outcome_label", "Effect (95% CI)", "estimate", 
+#               "lower.CL", "upper.CL", "p-value", "row_order", "endpoint_id")
+d_eff <- d1[grepl("[Dd]exa", Treatment)]
+
+# All plotting data:
+.d <- merge(d_emm, d_eff, by = "outcome_var")[order(row_order)]
+```
+
+```{r vital_signs_forest_plot, include=FALSE, eval=FALSE}
+# fig.width=get_wh(pvital)["width"], fig.height=get_wh(pvital)["height"]
+# Make vital signs forest plot:
+
+# # Make column with spaces where forest plot shall appear
+# d_emm[, plot := paste(rep(" ", 20), collapse = " ")]
+
+# columns for the forest plot:
+forest_cols <- c("outcome_label", "Visit", dexa_trt_lev, ref_trt_lev, "plot", 
+                 "Effect (95% CI)", "p-value")
+dforest <- .d[, .SD, .SDcols = forest_cols]
+setnames(dforest, 
+         c("outcome_label", "plot"), 
+         c("Vital sign",    " "))
+
+# Initiate forestplot:
+pvital <- forest(data      = dforest,
+                 theme     = tm,
+                 est       = .d[, estimate],
+                 lower     = .d[, lower.CL],
+                 upper     = .d[, upper.CL],
+                 xlim      = c(-4, 4),
+                 # ticks_at  = xticks,
+                 ci_column = 5)
+# Adjust appearance of plot:
+pvital <- insert_text(pvital, 
+                      text = "Est. Mean (95% CI)", # additional header over Dexa/Placebo
+                      part = "header", 
+                      row  = 1,
+                      col  = which(names(dforest) %in% trt_levs),
+                      gp   = gpar(fontface = "bold"))
+pvital <- add_border(pvital, # h-line over Dexa Plac no. subjects
+                     part = "header", 
+                     row  = 1,
+                     col  = which(names(dforest) %in% trt_levs),
+                     gp   = gpar(lwd = .5))
+pvital <- add_border(pvital, # hline below header
+                     part = "header", 
+                     row  = 2,
+                     gp   = gpar(lwd = .5))
+pvital <- edit_plot(pvital, # right-align p-value column
+                    col   = which(names(dforest) == "p-value"), 
+                    which = "text", 
+                    hjust = unit(1, "npc"), 
+                    x     = unit(0.9, "npc"))
+pvital
+```
+
+
+Vital signs summary `gt` table:
+```{r}
+# Get data:
+tab_cols <- c("outcome_label", dexa_trt_lev, ref_trt_lev, 
+                 "Effect (95% CI)", "p-value", "endpoint_id")
+.dd <- .d[, .SD, .SDcols = tab_cols]
+setnames(.dd, "outcome_label", "Outcome")
+.dd[, `Source table` := paste0("[-@sec-", endpoint_id, "]")]
+.dd[, endpoint_id := NULL]
+
+# Make gt-table:
+gt_tab <- gt(.dd) |> 
+  tab_spanner(label = "Est. Means (95% CI)", columns = trt_levs) |>
+  set_gt_style()  |>
+  # Include border line under spanner columns
+  tab_options(
+    column_labels.border.bottom.style = "solid",
+    column_labels.border.bottom.color = "#333333",
+    column_labels.border.bottom.width = px(1)
+  ) |> 
+  # Left align first column
+  tab_style(
+    style = cell_text(align = "left"),
+    locations = list(
+      cells_body(columns = "Outcome"),
+      cells_column_labels(columns = "Outcome")
+    )
+  )
+
+# Make footers:
+table_footers <- get_footers()
+
+# Scales:
+sc_foot <- sapply(seq_len(.dd[, .N]), function(i) { # i <- 1
+  outc <- .dd[i, Outcome]
+  table_footers[sapply(key, grepl, x = outc), footer][1]
+})
+
+# Abbreviations:
+key_list <- c("Est. Mean", "CI", "Effect")
+abbrev_foot <- sapply(key_list, function(k) {
+  table_footers[key == k, footer]
+}, USE.NAMES = FALSE)
+
+# Add footers to gt-table:
+all_foot <- paste0(paste(c(sc_foot, abbrev_foot), collapse = ", "), ".")
+foot_list <- list(all_foot, 
+                  table_footers[type == "qualifier" & key == "SAS", footer])
+gt_tab <- add_footer_lines_to_gt(gt_tab, footer_list = foot_list)
+gt_tab
+```
+
+Save `gt` table
+```{r}
+save_gt_table(gt_tab,
+              regi = tlf_reg[file_stem == "vital_signs_overview"],
+              verbose = TRUE)
+```
+
+
+### Biochemistry
+
+Get data for biochemistry:
+```{r}
+# Get metadata for biochemistry outcomes:
+outc_vars <- tlf_reg[chapter == "biochemistry", unique(outcome_var)]
+tab <- tlf_reg[outcome_var %in% outc_vars &
+                 role == "Primary" &
+                 tlf_type == "table", 
+                .(outcome_var, outcome_label, visit, endpoint_id, analysis,
+                  transformation)]
+tab[, row_order := seq_len(.N)]
+
+# Extract data:
+d1 <- lapply(seq_len(nrow(tab)), function(i) { # i <- 15
+  regi <- tlf_reg[endpoint_id == tab[i, endpoint_id]]
+  res <- get_dt_table(regi)
+  res2 <- if(tab[i, analysis %in% "logistic"]) {
+    res[Visit == paste("Day", tab[i, visit]), 
+        .(Treatment, `Est. Mean (95% CI)` = `Est. Prob (95% CI)`, 
+          `Effect (95% CI)` = `OR (95% CI)`, estimate = odds.ratio, 
+          lower.CL = lwr.lrt, upper.CL = upr.lrt, `p-value`, trt)] 
+  } else { 
+    res[Visit == paste("Day", tab[i, visit]), 
+        .(Treatment, `Est. Mean (95% CI)`, `Effect (95% CI)`, estimate, 
+          lower.CL, upper.CL, `p-value`, trt)]
+  }
+  cbind(tab[i], res2)
+}) |> rbindlist()
+
+
+# Get treatment levels:
+trt_levs <- get_trt_levs(d1)
+ref_trt_lev <- trt_levs["reference"] |> unname()
+dexa_trt_lev <- trt_levs["active"] |> unname()
+trt_levs <- c(dexa_trt_lev, ref_trt_lev)
+
+# Estimated means data:
+d_emm <- dcast(d1, outcome_var  ~ Treatment, value.var = "Est. Mean (95% CI)")
+
+# Treatment effect data:
+d_eff <- d1[grepl("[Dd]exa", Treatment)]
+
+# All data:
+.d <- merge(d_emm, d_eff, by = "outcome_var")[order(row_order)]
+
+# Conditional outcome formatting:
+.d[, Outcome := outcome_label]
+.d[!has_char(transformation) & analysis == "ancova", 
+   Outcome := paste0(Outcome, "*")]
+.d[analysis == "logistic", Outcome := paste0(Outcome, " \u2265 2§")]
+```
+
+Biochemistry summary `gt` table:
+```{r}
+# Get data:
+tab_cols <- c("Outcome", dexa_trt_lev, ref_trt_lev, 
+                 "Effect (95% CI)", "p-value", "endpoint_id")
+.dd <- .d[, .SD, .SDcols = tab_cols]
+.dd[, `Source table` := paste0("[-@sec-", endpoint_id, "]")]
+.dd[, endpoint_id := NULL]
+
+
+# Make gt-table:
+gt_tab <- gt(.dd) |> 
+  tab_spanner(label = "Est. Means (95% CI)", columns = trt_levs) |>
+  set_gt_style()  |>
+  # Include border line under spanner columns
+  tab_options(
+    column_labels.border.bottom.style = "solid",
+    column_labels.border.bottom.color = "#333333",
+    column_labels.border.bottom.width = px(1)
+  ) |> 
+  # Left align first column
+  tab_style(
+    style = cell_text(align = "left"),
+    locations = list(
+      cells_body(columns = "Outcome"),
+      cells_column_labels(columns = "Outcome")
+    )
+  )
+# gt_tab
+
+# Make footers:
+table_footers <- get_footers()
+
+# Scales:
+sc_foot <- sapply(seq_len(.dd[, .N]), function(i) { # i <- 1
+  outc <- .dd[i, Outcome]
+  table_footers[sapply(key, grepl, x = outc), footer][1]
+})
+
+# Abbreviations:
+key_list <- c("Est. Mean", "CI", "Effect")
+abbrev_foot <- sapply(key_list, function(k) {
+  table_footers[key == k, footer]
+}, USE.NAMES = FALSE)
+abbrev_foot <- gsub("difference", "ratio", abbrev_foot)
+abbrev_foot <- gsub("-", "/", abbrev_foot)
+
+# Add footers to gt-table:
+foot_list <- list(
+  scale = paste0(paste(sc_foot, collapse = ", "), "."),
+  table_footers[type == "qualifier" & key == "SAS", footer],
+  abbrev = paste0(paste(abbrev_foot, collapse = ", "), "."),
+  "*: Effect is an estimated treatment difference for Dexamethasone - Placebo",
+  paste0("§: Analysis is a logisitic regression model presented as estimated", 
+         " probabilities and Odds Ratio for Dexamethasone / Placebo."))
+gt_tab <- add_footer_lines_to_gt(gt_tab, footer_list = foot_list)
+gt_tab
+```
+
+Save `gt` table
+```{r}
+save_gt_table(gt_tab,
+              regi = tlf_reg[file_stem == "biochemistry_overview"],
+              verbose = TRUE)
+```
+
+
+## Appendix
+
+### **R** session info
+
+```{r}
+sessionInfo()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

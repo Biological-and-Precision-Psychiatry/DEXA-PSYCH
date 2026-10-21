@@ -1,0 +1,350 @@
+---
+title: "Hierarchical Testing"
+author: "Eva Nina S Wandall"
+date: "`r Sys.Date()`, original: 2026-09-10"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+  pdf_document:
+    toc: true
+header-includes: 
+- \usepackage{float}
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup0, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, collapse = TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+options(knitr.kable.NA = '')
+
+# wider output when knit'ing:
+if (isTRUE(getOption("knitr.in.progress")) && !knitr::is_latex_output()) {
+  options(width = 110)
+}
+```
+
+```{r setup, results='hide', message=FALSE, warning=FALSE}
+library(data.table)
+library(gt)
+library(CRP)
+
+source("20_functions/source_dir.R")
+source_dir("20_functions")
+```
+
+## Introduction
+
+This script implements a hierarchical testing procedure applied across the 
+primary and key secondary endpoints to control the family-wise type I error 
+rate. Endpoints are tested sequentially in a predefined order (cf. the Statistical
+Analysis Plan). An endpoint is considered significant only if it meets the 
+significance criterion and all preceding endpoints in the sequence were also 
+significant.
+
+
+## Hierarchical testing procedure
+
+Get metadata registry
+```{r}
+tlf_reg <- get_metadata()
+```
+
+Define the ordered set of outcome specifications corresponding to the testing hierarchy 
+```{r}
+idx <- data.table(
+  outcome_var = c(rep("madrs_total10", 6), rep("hamd_total17",2),
+                  rep("mdi_total",2), "eq5d5l_scale", "madrs_total10"),
+  outcome_type = c(rep("cont", 4), rep("binary", 2), rep("cont", 5), "binary"),
+  outcome_kind = c(rep("chgbl", 4), "responder", "remission", rep("chgbl", 5), 
+                   "sustain"),
+  visit = c(7, 4, 14, 28, 7, 7, 7, 28, 7, 28, 7, 28),
+  estimand = "policy",
+  tlf_type = "table",
+  role = "Primary",
+  `Test order` = 1:12
+  )
+idx
+```
+
+Look up expected counts for remission, repsonder and sustained response analyses,
+and modify outcome specification if expected counts are <5 or data exhibits 
+complete separation.
+```{r}
+# Meta data rows for summary of responder, remission and sustained response 
+# on MADRS-10 total (policy estimand)
+bin_reg <- tlf_reg[outcome_var == "madrs_total10" &
+                     estimand == "policy" &
+                     role == "Summary" &
+                     outcome_type == "binary"]
+
+#' Get expected and minimum observed counts for a binary endpoint
+#'
+#' For a single endpoint defined by a metadata row, extracts the number of
+#' cases at the relevant visit and computes the expected count and the number 
+#' of cases in the arm with the fewest cases.
+#'
+#' The visit is chosen according to the outcome kind: Day 28 for sustained
+#' response and Day 7 for responder and remission.
+#'
+#' @param regi A one-row `data.table` with metadata for the endpoint Must
+#'   contain the column `outcome_kind` with one of the values `"sustain"`,
+#'   `"responder"` or `"remission"`.
+#'
+#' @return A one-row `data.table` with columns `outcome_kind` (the outcome kind 
+#' taken from `regi`),`N_expected` (expected number of cases per arm), and `N_min`
+#' (the number of cases in the arm with the fewest cases).
+#' 
+get_expected_counts <- function(regi){
+  # check outcome_kind is sustained response, responder or remission
+  stopifnot(nrow(regi) == 1,
+            regi$outcome_kind %in% c("sustain","responder","remission"))
+  
+  # set visit to day 7 for responder and remission and day 28 for sustained response
+  visit <- fifelse(regi$outcome_kind == "sustain", "day28", "day7")
+  
+  # get dt table based on meta data row
+  tab <- get_dt_table(regi)
+  
+  # Identify which outcome_kind column is present in this table and rename to 
+  # N_obs
+  tab[, outcome_kind := regi$outcome_kind]
+  n_col <- intersect(names(tab), c("Responder", "Remission", "Sustained response"))
+  stopifnot(length(n_col) == 1)
+  setnames(tab, n_col, "N_obs")
+  
+  # Extract relevant rows and columns
+  cols <- c("trt","f_visit", "outcome_kind", "N_obs")
+  rows <- tab[f_visit == visit, .SD, .SDcols = cols]
+  
+  # Compute expected counts and number of cases in the arm with least cases
+  N_expected <- rows[trt == "Any treatment",  N_obs/2]
+  N_min <- rows[trt != "Any treatment", min(N_obs)]
+  
+  # Return:
+  data.table(outcome_kind = regi[, outcome_kind],
+             N_expected = N_expected,
+             N_min = N_min)
+}
+
+# Calculate expected counts for binary outcomes
+bin_exp_count <- rbindlist(lapply(1:nrow(bin_reg), function(i) get_expected_counts(bin_reg[i])))
+bin_exp_count
+
+# Modify idx for binary outcomes with expected counts <5 or complete separation
+idx[outcome_kind %in% bin_exp_count[N_expected < 5 | N_min == 0]$outcome_kind, 
+    role := "Unconditional exact"]
+idx
+```
+
+Select the metadata rows corresponding to the primary and key secondary outcomes
+```{r}
+# Select the metadata rows
+th_reg <- tlf_reg[idx, on = setdiff(names(idx), "Test order"), mult = "all"]
+setorder(th_reg, `Test order`)
+
+# Ensure correct number of rows and only primary and key secondary endpoints are 
+# included
+stopifnot(nrow(idx) == 12,
+          nrow(th_reg) == nrow(idx),
+          th_reg[, unique(endpoint_level)] %in% c("Primary", "Key secondary")
+          )
+```
+
+Extract stats from tables included in the book based on metadata
+```{r}
+#' Append metadata rows for primary and secondary endpoints with results from 
+#' the table corresponding to the row's endpoint_id 
+#'
+#' @param regi A one-row `data.table` with metadata for the endpoint. 
+#'
+#' @return A one-row `data.table` where the metadata row has been appended with
+#' the following statistics: 
+#' * `estimate`: The treatment effect estimate (OR for binary endpoints, ETD
+#'    for continuous endpoints)
+#' * `lower.CL`, `upper.CL`: Lower and upper confidence limits for `estimate`, 
+#' * `Effect`: The formatted treatment effect with confidence interval
+#' * `p-value`: p-value for the test of no treatment effect
+#' * `Dexamethasone`, `Placebo`: Estimated mean for each treatment arm (continuous
+#'    endpoints) or number of cases/subjects included (binary endpoints)
+#' 
+get_stats <- function(reg){
+  
+  # Function adding stats to one row
+  get_stats_one_row <- function(i, reg){
+    # Select meta data row number i
+    regi <- reg[i]
+    
+    # Get dt table
+    tab <- get_dt_table(regi)
+    
+    # Select relevant rows based on visit
+    rows <- tab[Visit == paste("Day", regi$visit)]
+    
+    # Get treatment names
+    trt_levels <- unique(as.character(rows$trt))
+    dexa <- grep("[Dd]exa", trt_levels, value = TRUE)
+    placebo <- grep("[Pp]lacebo", trt_levels, value = TRUE)
+    
+    stopifnot(
+      length(dexa) == 1,
+      length(placebo) == 1,
+      dexa != placebo
+    )
+    
+    # Mark whether analysis is binary
+    is_binary <- regi[, outcome_type == "binary"]
+    
+    # Mark whether analysis is unconditional exact test
+    is_uce <- regi[, role == "Unconditional exact"]
+    
+    # Define columns where single value should be extracted depending on
+    # outcome and analysis type
+    cols <- if (is_binary & !is_uce) {
+      c(Effect = "OR (95% CI)", estimate = "odds.ratio",
+        lower.CL = "lwr.lrt", upper.CL = "upr.lrt")
+    } else if (is_binary & is_uce){
+      c(Effect = "OR (95% CI)", estimate = "odds.ratio",
+        lower.CL = "lwr_ci", upper.CL = "upr_ci")
+    } else {
+      c(Effect = "Effect (95% CI)", estimate = "estimate",
+        lower.CL = "lower.CL", upper.CL = "upper.CL")
+    }
+    
+    # Append p-value column to cols
+    cols <- c(cols, `p-value` = "p-value")
+    
+    # Define column for estimated means/counts depending on outcome and 
+    # analysis type
+    est_col <- if (is_binary) regi[, oc_kind_label] else "Est. Mean (95% CI)"
+    stopifnot(
+      length(est_col) == 1 && !is.na(est_col),
+      est_col %in% names(rows)
+    )
+    
+    # Function extracting a single non-NA value
+    get_value <- function(x) {
+      x <- x[!is.na(x)]
+      stopifnot(length(x) == 1)
+      x
+    }
+    # Collect values in the desired column order
+    vals <- c(
+      setNames(list(rows[trt == dexa][[est_col]],
+                    rows[trt == placebo][[est_col]]),
+               c(dexa, placebo)),
+      lapply(cols, function(col) get_value(rows[[col]]))
+    )
+    
+    # Add columns to regi
+    regi[, names(vals) := vals]
+
+    # Return
+    regi
+  }
+  
+  # Run get stats for all rows in reg 
+  res <- rbindlist(lapply(seq_len(nrow(reg)), get_stats_one_row, reg = reg))
+  
+  # Return
+  res
+}
+
+th_reg <- get_stats(th_reg)
+```
+
+Apply hierarchical test procedure to control for multiple testing
+```{r}
+# Flag whether a test favors Dexamethasone
+th_reg[, favors_dexa := fifelse(
+  fcase(
+    outcome_type == "binary", estimate > 1,
+    outcome_var  == "eq5d5l_scale",     estimate > 0,
+    default = estimate < 0
+  ),
+  "yes", "no"
+)]
+
+# Flag Superiority if test is significant (alpha = 0.05) and favors Dexamethasone
+th_reg[, Superiority := ifelse(`p-value` < 0.05 & favors_dexa == "yes", "Yes", "No")]
+
+# Apply the hierarchical testing procedure, i.e. once a test is non-significant, 
+# all subsequent tests are considered non-significant
+th_reg[, `p-value` := replace(`p-value`, cumsum(Superiority == "No") > 1, "Not tested")]
+th_reg[, Superiority := replace(Superiority, cumsum(Superiority == "No") > 0, "No")]
+```
+
+Format table for presentation
+```{r}
+# Format outcome
+th_reg[outcome_type == "cont", Outcome := paste("Change in", variable_label, "at Day", visit)]
+th_reg[outcome_kind == "responder", Outcome := paste0(outcome_label, " at Day ", visit, "†")]
+th_reg[outcome_kind == "remission", Outcome := paste0(outcome_label, " at Day ", visit, "‡")]
+th_reg[outcome_kind == "sustain", Outcome := paste0(outcome_label, " at Day ", visit, "§")]
+th_reg[, Outcome := gsub("Responder", "Response", Outcome)]
+
+# Save data.table object
+saveRDS(th_reg, "50_output_db/outputs/summary_primary_key_secondary_analyses.rds")
+
+# Select columns
+th_dt <- th_reg[, .(Outcome, `Test order`, `p-value`, Superiority, endpoint_id)]
+
+# Add source
+th_dt[, `Source table` := paste0("[-@sec-", endpoint_id, "]")]
+
+# Convert to a gt table
+th_gt <- gt(th_dt[, !"endpoint_id"]) |> set_gt_style() |>
+  cols_align(
+    align = "left",
+    columns = Outcome
+  ) 
+```
+
+Attach footers and display final table
+```{r}
+# Get footer metadata
+footers <- get_footers()
+
+# Define footers
+th_footer <- list(definition = paste("Superiority is claimed if all preceding endpoints in the hierarchy",
+                                     "have met the significance criteria and the effects favor dexamethasone. ", 
+                                     "All analyses address the primary estimand (treatment policy).",
+                                     "All analyses use the Full Analysis Set (FAS).",
+                                     "For binary endpoints, if the expected counts are below 5 or data exhibit",
+                                     "complete separation, the p-value is obtained from an unconditional exact",
+                                     "test, as prespecified in the SAP."),
+                  scale = paste(footers[type == "scale" & key %in% c("MADRS~10~", "ANCOVA", "HAM-D~17~",
+                                                                     "MDI","EQ-5D-5L Visual-Analogue Scale"), 
+                                        footer], collapse = ". "),
+                  abbrev = c("† A responder is defined by the MADRS~10~ score being reduced by at least 50% from baseline (day 0).",
+                             "‡ Remission is defined by a MADRS~10~ score ≤ 10.",
+                             "§ Sustained response is defined by the response score being reduced by at least 50% from baseline (day 0) at all visits from Day 7 up to and including Day 28.")
+                  )
+
+# Attach footers to gt table
+th_gt <- add_footer_lines_to_gt(th_gt, th_footer)
+
+# Display result
+th_gt
+```
+
+Save gt table
+```{r}
+save_gt_table(th_gt, 
+              regi = tlf_reg[file_stem == "hierarchical_testing_results"], 
+              verbose = TRUE)
+```
+
+
+## Appendix
+
+### **R** session info
+
+```{r}
+sessionInfo()
+```
+
+
+
+

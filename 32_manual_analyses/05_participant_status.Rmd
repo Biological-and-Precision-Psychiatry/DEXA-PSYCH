@@ -1,0 +1,250 @@
+---
+title: "Participant status"
+author: "Eva N. S. Wandall"
+date: "`r Sys.Date()`, original: 2026-09-03"
+output: 
+  html_document:
+    self_contained: yes    
+    toc: yes
+    toc_float: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup0, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+
+# wider output when knit'ing:
+if (isTRUE(getOption("knitr.in.progress")) && !knitr::is_latex_output()) {
+  options(width = 110)
+}
+```
+
+```{r setup, results='hide', message=FALSE}
+## load packages:
+library(data.table)
+library(CRP)
+library(ggsci)
+library(cowplot)
+library(ggplot2)
+
+source("20_functions/source_dir.R")
+source_dir("20_functions")
+```
+
+
+## Patient retention for primary outcome assessment
+
+Get data
+```{r}
+# Analysis data
+adat <- get_analysis_data()
+
+# Data on MADRS-10 at day 0, 4, 7, 14 and 28
+rdt <- adat[f_visit %in% c("day0","day4", "day7", "day14","day28") &
+              variable == "madrs" & 
+              part == "total10", 
+            .SD[1], by = c("ID","f_visit")][, .(ID, f_visit, n_target, state, trt)]
+
+# Ensure exactly one record per individual per visit
+stopifnot(nrow(rdt[, .SD[1], .(ID, f_visit)]) == nrow(rdt),
+          rdt[, uniqueN(ID)*uniqueN(f_visit)] == nrow(rdt)
+          )
+```
+
+Compute retention status per individual and visit
+```{r}
+# Add indicator of MADRS-10 is recorded in window for each follow-up visit
+rdt[, measured := ifelse((state == "in_window") | f_visit == "day0", 1, 0)]
+
+# Ensure measured = 1 for all day 0 visits
+stopifnot(rdt[f_visit == "day0", unique(measured)] == 1)
+
+# Mark an observation as "retained" if it is itself measured, or if an 
+# observation at a later visit for the same ID is measured.
+setorder(rdt, ID, -n_target)
+rdt[, retained := cummax(measured), by = ID]
+setorder(rdt, ID, n_target)
+```
+
+Tabulate retention counts by visit and treatment group 
+```{r}
+# Count patients retained at each visit and treatment group
+rcount <- rdt[, .(n_retained = sum(retained)), by = .(trt, f_visit, n_target)]
+
+# Add number of randomized individuals
+rcount[, n_randomized := n_retained[f_visit == "day0"], trt]
+
+# Compute percentage retained at each visit
+rcount[, pct := 100 * n_retained / n_randomized]
+
+# Add asterix to day 7 label in figure (footnote reference)
+rcount[, visit_lab := ifelse(n_target == 7, "7*", n_target)]
+
+# Columns for at risk plot
+rcount[, n_visit := n_target]
+rcount[, Treatment := trt]
+
+# Make label for "at risk" tabel
+rcount[, n := as.character(n_retained)]
+rcount[n_visit %in% c(14,28), n := paste0(n_retained, " (", round(pct),"%)")]
+```
+
+Save data
+```{r}
+saveRDS(rcount, file = "02_data_derived/patient_retention.rds")
+```
+
+
+### Make patient retention figure (Full Y-axis)
+
+```{r}
+rstep <- mk_retention_plot(dt = rcount)
+rtab <- mk_at_risk_plot(rcount)
+
+# Merge step and table plot
+rfig <- melt_plots(rstep, rtab, risk_label = "Patients retained:")
+rfig
+```
+
+Save figure
+```{r}
+ggsave("40_tlf_source/figures/patient_retention.pdf", plot = rfig, width = 7, height = 5)
+ggsave("40_tlf_source/figures/patient_retention.png", plot = rfig, width = 7, height = 5)
+```
+
+
+### Make patient retention figure (Truncated Y-axis)
+
+```{r}
+rstep_trunc_y <- mk_retention_plot(dt = rcount,
+                                ylimits = c(80, 101))
+
+# Merge step and table plot
+rfig_trunc_y <- melt_plots(rstep_trunc_y, rtab, risk_label = "Patients retained:")
+rfig_trunc_y
+```
+
+Save figure
+```{r}
+ggsave("40_tlf_source/figures/patient_retention_trunc_y.pdf", plot = rfig_trunc_y, width = 7, height = 5)
+ggsave("40_tlf_source/figures/patient_retention_trunc_y.png", plot = rfig_trunc_y, width = 7, height = 5)
+```
+
+
+## Treatment persistence
+
+Get data
+```{r}
+# Compliance data
+pdat <- readRDS("02_data_derived/treatment_compliance_all_rand_id.rds")
+
+# Ensure data on all randomized individuals are in compliance data and
+# that there are exactly 8 rows (day 1 to 8) per individual
+stopifnot(pdat[, uniqueN(ID)*8] == nrow(pdat),
+          pdat[, uniqueN(ID)] == adat[, uniqueN(ID)])
+```
+
+Compute treatment persistence status per individual and treatment day. A patient
+is considered treatment persistence until date of premature treatment continuation.
+```{r}
+# Make numeric variable of day since randomization (1 to 8)
+pdat[, n_target := as.numeric(d_on_treat - d_day0)]
+
+# Make indicator variable of treatment persistence
+pdat[!is.na(d_prem_trt_disc), i_tp := 0]
+setorder(pdat, ID, n_target)
+pdat[, i_tp := nafill(i_tp, "locf", fill = 1), ID]
+```
+
+Add treatment variable
+```{r}
+pdat[, date := d_day0]
+pdat <- add_derived_data(pdat, "trt")
+pdat[, date := NULL]
+```
+
+Tabulate treatment persistence counts by treatment day and group 
+```{r}
+# Add variable of number of randomized individuals per arm
+pdat[, n_randomized := uniqueN(ID), trt]
+
+# Count patients without premature treatment discontinuation per day and arm
+pcount <- pdat[, .(n_tp = sum(i_tp)), by = .(trt, n_target, n_randomized)]
+
+# Delete day 8 (not part of the treatment period) and include day 0 (day of randomization)
+pcount[n_target == 8, c("n_target", "n_tp") := list(0, n_randomized)]
+
+# Compute percentage persistent to treatment per visit per arm
+pcount[, pct := 100 * n_tp / n_randomized]
+
+# Add asterix to day 7 label in figure (footnote reference)
+pcount[, visit_lab := ifelse(n_target == 7, "7*", n_target)]
+
+# Columns for at risk plot
+pcount[, n_visit := n_target]
+pcount[, Treatment := trt]
+
+# Make label for "at risk" tabel
+pcount[, n := as.character(n_tp)]
+pcount[n_visit %in% c(7), n := paste0(n_tp, " (", round(pct),"%)")]
+```
+
+Save data 
+```{r}
+saveRDS(pcount, file = "02_data_derived/treatment_persistence.rds")
+```
+
+
+### Make treatment persistence figure (Full Y-axis)
+
+```{r}
+pstep <- mk_retention_plot(dt = pcount[n_target != 0],
+                           xlimits = c(0, 7.5),
+                           ylimits = c(0,108),
+                           ylab = "Treatment persistence (%)",
+                           legend_pos = c(-4.5, 4.5))
+
+ptab <- mk_at_risk_plot(pcount, xlimits = c(0, 7.5))
+
+# Merge step and table plot
+pfig <- melt_plots(pstep, ptab, risk_label = "Persistent patients:")
+pfig
+```
+
+Save figure
+```{r}
+ggsave("40_tlf_source/figures/treatment_persistence.pdf", plot = pfig, width = 7, height = 5)
+ggsave("40_tlf_source/figures/treatment_persistence.png", plot = pfig, width = 7, height = 5)
+```
+
+
+### Make treatment persistence figure (Truncated Y-axis)
+
+```{r}
+pstep_trunc_y <- mk_retention_plot(dt = pcount[n_target != 0],
+                                   xlimits = c(0, 7.5),
+                                   ylimits = c(pcount[, min(pct, na.rm = TRUE)] - 2, 100.4),
+                                   ylab = "Treatment persistence (%)",
+                                   legend_pos = c(-0.2, 0.2))
+
+# Merge step and table plot
+pfig_trunc_y <- melt_plots(pstep_trunc_y, ptab, risk_label = "Patients retained:")
+pfig_trunc_y
+```
+
+Save figure
+```{r}
+ggsave("40_tlf_source/figures/treatment_persistence_trunc_y.pdf", plot = pfig_trunc_y, width = 7, height = 5)
+ggsave("40_tlf_source/figures/treatment_persistence_trunc_y.png", plot = pfig_trunc_y, width = 7, height = 5)
+```
+
+
+## Appendix
+
+### **R** session info
+
+```{r}
+sessionInfo()
+```

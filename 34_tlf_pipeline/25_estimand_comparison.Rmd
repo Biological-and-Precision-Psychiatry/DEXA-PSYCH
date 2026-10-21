@@ -1,0 +1,233 @@
+---
+title: "Comparison of Estimands"
+author: "Rune Haubo B Christensen"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+  pdf_document:
+    toc: true
+header-includes: 
+- \usepackage{float}
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup0, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, collapse = TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+options(knitr.kable.NA = '')
+
+# wider output when knit'ing:
+if (isTRUE(getOption("knitr.in.progress")) && !knitr::is_latex_output()) {
+  options(width = 110)
+}
+```
+
+
+## Setup 
+
+```{r setup, results='hide', message=FALSE, warning=FALSE}
+library(data.table)
+library(ggplot2)
+library(CRP)
+
+source("20_functions/source_dir.R")
+source_dir("20_functions")
+```
+
+
+## Make compare-estimand figures
+
+Define functions:
+```{r}
+#' Extract data from statistical output tables
+#'
+#' @param outc_var 
+#' @param Role 
+#' @param tlf_reg optional metadata object
+#'
+#' @returns a structured `data.table` ready for plotting
+#'
+#' @examples
+#' 
+#' tlf_reg <- get_metadata()
+#' d1 <- get_output_data(outc_var = "hamd_total17", tlf_reg = tlf_reg)
+#' 
+get_output_data <- function(outc_var = "madrs_total10", 
+                            Role     = "Primary", 
+                            tlf_reg  = NULL) {
+  if(is.null(tlf_reg)) tlf_reg <- get_metadata()
+  
+  # Endpoint IDs for tables to extract from:
+  tab <- tlf_reg[outcome_var == outc_var &
+                   outcome_kind == "chgbl" &
+                   role == Role &
+                   tlf_type == "table", 
+                 .(estimand, visit, endpoint_id, caption)]
+  
+  # Extract data:
+  lapply(seq_len(nrow(tab)), function(i) { # i <- 1
+    regi <- tlf_reg[endpoint_id == tab[i, endpoint_id]]
+    res <- get_dt_table(regi)
+    res <- res[Visit == paste("Day", tab[i, visit]) & 
+                 grepl("[dD]exa", Treatment), 
+               .(Treatment, estimate, lower.CL, upper.CL)]
+    cbind(tab[i], res, regi[, .(outcome_label)])
+  }) |> rbindlist()
+}
+
+#' Make plot to compare estimands 
+#'
+#' @param data the result of `get_output_data()`
+#'
+#' @returns a `ggplot2` plot.
+#'
+#' @examples
+#' 
+#' tlf_reg <- get_metadata()
+#' d1 <- get_output_data(Chapter = "hamd_total17", tlf_reg = tlf_reg)
+#' mk_estimand_compare_plot(d1)
+#' 
+mk_estimand_compare_plot <- function(data) {
+  stopifnot(is.data.table(data) && nrow(data) >= 2L)
+  
+  # Check columns
+  required_cols <- c("estimand", "visit", "endpoint_id", "Treatment", "estimate",
+                     "lower.CL", "upper.CL", "outcome_label")
+  test_required(required_cols, names(data), "data")
+  .d <- data[, .SD, .SDcols = required_cols]
+
+  .d[, Estimand := tools::toTitleCase(estimand)]
+  .d[, Estimand := relevel(factor(Estimand), ref = "Policy")]
+  .d[, n_visit2 := visit + fifelse(grepl("policy", estimand), .2, -.2)]
+  .d[, visit_lab := as.character(round(visit))]
+  if(any("MADRS~10~" %in% .d[, outcome_label]))
+    .d[, visit_lab := fifelse(n_visit == 7, "7*", as.character(round(visit)))]
+
+  xbreaks <- .d[, .SD[1, .(visit_lab)], by = visit]
+  is_fake <- .d[, any(grepl("[fF]ake", Treatment))]
+  yLab <- .d[1, parse(text = convert_subscript(outcome_label))] # to display MADRS~10~ ie. MADRS[10]
+  
+  
+  p <- ggplot(.d, aes(n_visit2, estimate)) + 
+    theme_classic() + 
+    theme(legend.position = "right", legend.position.inside = c(0, 0)) + 
+    
+    # Lines and points:
+    geom_line(aes(color = Estimand, linetype = Estimand)) + 
+    scale_linetype_manual(values = c("Policy" = "solid", "Efficacy" = "longdash")) +
+    geom_point(aes(color = Estimand, shape = Estimand)) + 
+    geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL, color = Estimand), 
+                  width = 0.2) + 
+    
+    # Horizontal line at Y = 0:
+    geom_hline(yintercept = 0, linetype = "dashed") + 
+    
+    # X and Y axes:
+    scale_x_continuous("Days since Randomization", 
+                       breaks = xbreaks[, visit], 
+                       labels = xbreaks[, visit_lab],
+                       minor_breaks = NULL, limits = c(3.5, 28.5)) + 
+    scale_y_continuous(yLab) + 
+    
+    # Color palette:
+    scale_color_manual(values = c("Efficacy" = "#009E73", "Policy" = "#CC79A7"))
+  # scale_color_manual(values = c("#009E73", "#CC79A7"))
+  
+  # Add watermark if treatment labels are fake:
+  if(is_fake) p <- p + 
+    geom_text(x = 14, y = .d[, mean(estimate)], col = "red", 
+              label = "Artificial pre-DBL\nTreatment Assignment", 
+              size = 11, angle = 45, alpha = .2, check_overlap = TRUE)
+  
+  p
+}
+```
+
+
+Determine which compare-estimand figures to make:
+
+- We take all cases in metadata where `outcome_var` contains `compare estimands`
+- We extract the right outcome variable names from the metadata `file_stem` field
+
+```{r}
+tlf_reg <- get_metadata()
+cases <- tlf_reg[grepl("compare estimands", outcome_var), 
+                 .(outcome_var, endpoint_id, folder, file_stem)]
+cases[, outc_var := gsub("compare_estimands_", "", file_stem)]
+stopifnot(all(cases[, outc_var] %in% tlf_reg[, unique(outcome_var)]))
+cases
+```
+
+Generate and save all figures:
+```{r}
+for (i in seq_len(cases[, .N])) { # i <- 10
+  d1 <- get_output_data(outc_var = cases[i, outc_var], tlf_reg = tlf_reg)
+
+  # Add cross references to cache:  
+  keys <- d1[, paste0(tools::toTitleCase(estimand), " at Day ", visit)]
+  add_to_crossref(endpoint_id = cases[i, endpoint_id],
+                  key         = keys,
+                  source      = d1[, endpoint_id])
+  
+  # Make figure:
+  fig <- mk_estimand_compare_plot(d1)
+
+  # Make file paths:
+  png_path <- cases[i, file.path(folder, paste0(file_stem, ".png"))]
+  pdf_path <- cases[i, file.path(folder, paste0(file_stem, ".pdf"))]
+
+  # Save figures:
+  cowplot::ggsave2(filename = png_path, fig, width = 7, height = 4.3)
+  cowplot::ggsave2(filename = pdf_path, fig, width = 7, height = 4.3)
+}
+```
+
+
+## Appendix
+
+### **R** session info
+
+```{r}
+sessionInfo()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
