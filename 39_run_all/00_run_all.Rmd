@@ -69,7 +69,7 @@ filenames <- list.files(DIR, pattern="Rmd$")
 filenames <- filenames[!grepl("^00|^99", filenames)]
 
 render_multiple_rmd(filenames, path = DIR, params = list(
-  import_randomization_list = FALSE,
+  import_randomization_list = TRUE,
   rand_list_path = "L:/Auditdata/DEXA-PSYCH Randomiseringsliste/DEXA-PSYCH-Randomization-list.xlsx",
   rand_list_sheet_nm = "Pakkelisten",
   fake_trt_rho = .2))

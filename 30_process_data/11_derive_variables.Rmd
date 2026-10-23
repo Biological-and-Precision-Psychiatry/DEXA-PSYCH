@@ -4,7 +4,7 @@ author: "Rune Haubo B Christensen and Eva N. S. Wandall"
 date: "`r Sys.Date()`, original: 2025-08-18"
 params:
   import_randomization_list: TRUE
-  rand_list_path: "L:/Auditdata/DEXA-PSYCH Randomiseringsliste/DEXA-PSYCH-Randomization-list-fake.xlsx"
+  rand_list_path: "L:/Auditdata/DEXA-PSYCH Randomiseringsliste/DEXA-PSYCH-Randomization-list.xlsx"
   rand_list_sheet_nm: "Pakkelisten"
   fake_trt_rho: 0.2
 output: 

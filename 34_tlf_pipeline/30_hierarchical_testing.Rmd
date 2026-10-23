@@ -213,7 +213,7 @@ get_stats <- function(reg){
     }
     
     # Append p-value column to cols
-    cols <- c(cols, `p-value` = "p-value")
+    cols <- c(cols, `p-value` = "p-value", p.value = "p.value")
     
     # Define column for estimated means/counts depending on outcome and 
     # analysis type
@@ -267,12 +267,12 @@ th_reg[, favors_dexa := fifelse(
 )]
 
 # Flag Superiority if test is significant (alpha = 0.05) and favors Dexamethasone
-th_reg[, Superiority := ifelse(`p-value` < 0.05 & favors_dexa == "yes", "Yes", "No")]
+th_reg[, Superiority := ifelse(p.value < 0.05 & favors_dexa == "yes", "Yes", "No")]
 
 # Apply the hierarchical testing procedure, i.e. once a test is non-significant, 
 # all subsequent tests are considered non-significant
-th_reg[, `p-value` := replace(`p-value`, cumsum(Superiority == "No") > 1, "Not tested")]
 th_reg[, Superiority := replace(Superiority, cumsum(Superiority == "No") > 0, "No")]
+th_reg[, `p-value` := replace(`p-value`, cumsum(Superiority == "No") > 1, "Not tested")]
 ```
 
 Format table for presentation
