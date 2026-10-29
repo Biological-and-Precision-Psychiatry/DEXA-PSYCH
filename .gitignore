@@ -45,6 +45,7 @@ archive*
 *.md
 !40_tlf_source/toc-scroll.html
 !README.md
+!CHANGELOG.md
 
 # History files
 .Rhistory

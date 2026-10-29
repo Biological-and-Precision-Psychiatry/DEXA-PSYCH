@@ -1,0 +1,114 @@
+---
+output: 
+  github_document
+editor_options: 
+  chunk_output_type: console
+---
+
+<!-- The .md file is generated from an .Rmd file. Please edit the .Rmd; not the .md !! -->
+
+
+```{r}
+#| label: setup_index
+#| include: false
+library(gert)
+library(data.table)
+
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+
+```{r}
+#| label: get_urls
+#| include: false
+
+# Get list of Git info:
+info <- gert::git_info()
+
+# Get github-url to repo:
+remotes      <- gert::git_remote_list()
+url          <- remotes$url[remotes$name == "origin"]
+url          <- gsub("\\.git$", "", url)
+pre_dbl_url  <- paste0(url, "/releases/tag/pre-dbl-v1.0")
+post_dbl_url <- paste0(url, "/releases/tag/post-dbl-v1.0")
+commit_url   <- paste0(url, "/tree/", info$commit)
+diff_url     <- paste0(url, "/compare/pre-dbl-v1.0...post-dbl-v1.0")
+# citation_url <- paste0(url, "/blob/main/CITATION.cff")
+# renvlock_url <- paste0(url, "/blob/main/renv.lock")
+
+# Get tags for releases (pre- and post-dbl):
+tags <- gert::git_tag_list()
+setDT(tags)
+tag_here <- "none"
+if(nrow(tags) > 0) tag_here <- tags$name[tags$commit == info$commit]
+
+pre_dbl_SHA  <- tags[name == "pre-dbl-v1.0", commit]
+post_dbl_SHA <- tags[name == "post-dbl-v1.0", commit]
+
+# Make compare-url 2 previous tag or SHA:
+compare2prev <- function(prev, current = gert::git_info()$commit) {
+  paste0(url, "/compare/", prev, "...", current)
+}
+# compare2prev("pre-dbl-v1.0")
+
+# Versions (write out in text for each release):
+quarto_v <- as.character(quarto::quarto_version())
+pandoc_v <- as.character(rmarkdown::pandoc_version())
+R.version.string
+
+```
+
+
+
+# Changelog
+
+**Changes to the analysis code and results for the DEXA-PSYCH trial are documented here.**
+
+- Pre-specified and pre-programmed results of the statistical analyses for the DEXA-PSYCH trial are available in in browsable web-books containing the so-called Tables, Listings, and Figures (TLF-books).
+- Additional post-hoc results will be made available when produced.
+- Archived code or results are never edited, tags are not moved, archived books are not replaced, and corrections appear as new releases.
+
+
+**Releases are labelled by the kind of change:**
+
+| Type        | Meaning                                             | Version  |
+|---          |---                                                  |---       |
+| Maintenance | Code or environment changes. Results are unchanged. | `v1.0.x` |
+| Addition    | New results. Existing results are unchanged.        | `v1.x.0` |
+| Correction  | Visible changes to presented results.               | `vx.0.0` |
+
+
+## `v1.0.1`---`r Sys.Date()` (tag [unreleased](`r commit_url`))
+
+- **Type:** Maintenance 
+- **Additions:** None
+- **Major changes:** None
+- **Minor changes:** 
+  - Add Changelog to repo.
+- **Effect on results:** None 
+  - Reproducibility checks showed no differences to `post-dbl-v1.0`.
+- **Commit:** [`r info$commit`](`r commit_url`)
+- **Changes to code:** [compare-view](`r compare2prev("post-dbl-v1.0")`)
+- **Environment:** R version 4.5.2 (2025-10-31 ucrt), Quarto 1.9.38, Pandoc 3.8.3.
+
+
+## `v1.0.0`---2026-10-23 (tag [post-dbl-v1.0](`r post_dbl_url`))
+
+- **Type:** Baseline---first post-database-lock release.
+- **Summary:** Analysis code as used for the post-DBL analyses. 
+- **Commit:** [`r post_dbl_SHA`](r paste0(url, "/tree/", post_dbl_SHA))
+- **Changes to code:** [compare-view](`r diff_url`)
+- **Zenodo code archive:** <https://doi.org/10.5281/zenodo.23587985>
+- **Environment:** R version 4.5.2 (2025-10-31 ucrt), Quarto 1.9.38, Pandoc 3.8.3.
+
+
+## Pre-DBL---2026-10-21 (tag [pre-dbl-v1.0](`r pre_dbl_url`))
+
+- **Type:** Baseline---blinded treatment assignment.
+- **Summary:** Analysis code locked before unblinding.
+- **Commit:** [`r pre_dbl_SHA`](r paste0(url, "/tree/", pre_dbl_SHA))
+- **Changes to code:** Baseline.
+- **Zenodo code archive:** <https://doi.org/10.5281/zenodo.23341773> 
+- **Environment:** R version 4.5.2 (2025-10-31 ucrt), Quarto 1.9.38, Pandoc 3.8.3. 
+
+
