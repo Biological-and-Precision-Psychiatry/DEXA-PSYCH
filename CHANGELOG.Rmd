@@ -96,7 +96,7 @@ R.version.string
 
 - **Type:** Baseline---first post-database-lock release.
 - **Summary:** Analysis code as used for the post-DBL analyses. 
-- **Commit:** [`r post_dbl_SHA`](r paste0(url, "/tree/", post_dbl_SHA))
+- **Commit:** [`r post_dbl_SHA`](`r paste0(url, "/tree/", post_dbl_SHA)`)
 - **Changes to code:** [compare-view](`r diff_url`)
 - **Zenodo code archive:** <https://doi.org/10.5281/zenodo.23587985>
 - **Environment:** R version 4.5.2 (2025-10-31 ucrt), Quarto 1.9.38, Pandoc 3.8.3.
@@ -106,7 +106,7 @@ R.version.string
 
 - **Type:** Baseline---blinded treatment assignment.
 - **Summary:** Analysis code locked before unblinding.
-- **Commit:** [`r pre_dbl_SHA`](r paste0(url, "/tree/", pre_dbl_SHA))
+- **Commit:** [`r pre_dbl_SHA`](`r paste0(url, "/tree/", pre_dbl_SHA)`)
 - **Changes to code:** Baseline.
 - **Zenodo code archive:** <https://doi.org/10.5281/zenodo.23341773> 
 - **Environment:** R version 4.5.2 (2025-10-31 ucrt), Quarto 1.9.38, Pandoc 3.8.3. 
