@@ -22,7 +22,7 @@ documented here.**
 | Addition    | New results. Existing results are unchanged.        | `v1.x.0` |
 | Correction  | Visible changes to presented results.               | `vx.0.0` |
 
-## `v1.0.1`—2026-10-29 (tag [unreleased](https://github.com/Biological-and-Precision-Psychiatry/DEXA-PSYCH/tree/53ff160123a127873916e695ce65e1332f574dcc))
+## `v1.0.1`—2026-10-29 (tag [unreleased](https://github.com/Biological-and-Precision-Psychiatry/DEXA-PSYCH/tree/main))
 
 - **Type:** Maintenance
 - **Additions:** None
@@ -32,9 +32,9 @@ documented here.**
 - **Effect on results:** None
   - Reproducibility checks showed no differences to `post-dbl-v1.0`.
 - **Commit:**
-  [53ff160123a127873916e695ce65e1332f574dcc](https://github.com/Biological-and-Precision-Psychiatry/DEXA-PSYCH/tree/53ff160123a127873916e695ce65e1332f574dcc)
+  [HEAD](https://github.com/Biological-and-Precision-Psychiatry/DEXA-PSYCH/tree/main)
 - **Changes to code:**
-  [compare-view](https://github.com/Biological-and-Precision-Psychiatry/DEXA-PSYCH/compare/post-dbl-v1.0...53ff160123a127873916e695ce65e1332f574dcc)
+  [compare-view](https://github.com/Biological-and-Precision-Psychiatry/DEXA-PSYCH/compare/post-dbl-v1.0...main)
 - **Environment:** R version 4.5.2 (2025-10-31 ucrt), Quarto 1.9.38,
   Pandoc 3.8.3.
 
