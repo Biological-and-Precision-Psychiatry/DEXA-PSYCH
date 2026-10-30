@@ -68,19 +68,18 @@ tlf_ctr_badge <- doi_to_badge(tlf_ctr_doi)
 > -   [**Trial protocol**](https://doi.org/10.1186/s13063-025-08989-2) (Journal publication of earlier version)
 > -   [**Statistical Analysis Plan**](`r sap_doi`)
 > -   **DEXA-PSYCH team**: 
-> -   - [Troels Boldt Rømer](https://orcid.org/0000-0002-0832-2667) (Sub-Investigator)
-> -   - [Camilla Goetzsche Frederiksen](https://orcid.org/0000-0002-4475-7617) (Sub-Investigator)
-> -   - Pernille Bølling Hansen (Sub-Investigator)
-> -   - [Eva Nina Sparre Wandall](https://orcid.org/0009-0008-1745-6027) (Statistician)
-> -   - Sille Holst (Research Nurse)
-> -   - [Rune Haubo Bojesen Christensen](https://orcid.org/0000-0002-4494-3399) (Trial Statistician)
-> -   - [Michael Eriksen Benros](https://orcid.org/0000-0003-4939-9465) (Sponsor and Principal Investigator)
->-    **Zenodo DOI archives**: 
->-    - [Pre-DBL and post-DBL code](`r code_doi`)
->-    - [Tables, Listings and Figures for primary publication](`r tlf_pp_doi`) (available after primary publication is published)
->-    - [Tables, Listings and Figures for clinical trial report](`r tlf_ctr_doi`) (available after secondary outcomes are published)
->-    - [Statistical Analysis Plan](`r sap_doi`)
-<!-- > -   **Last edits**: `r Sys.Date()` -->
+>     - [Troels Boldt Rømer](https://orcid.org/0000-0002-0832-2667) (Sub-Investigator)
+>     - [Camilla Goetzsche Frederiksen](https://orcid.org/0000-0002-4475-7617) (Sub-Investigator)
+>     - Pernille Bølling Hansen (Sub-Investigator)
+>     - [Eva Nina Sparre Wandall](https://orcid.org/0009-0008-1745-6027) (Statistician)
+>     - Sille Holst (Research Nurse)
+>     - [Rune Haubo Bojesen Christensen](https://orcid.org/0000-0002-4494-3399) (Trial Statistician)
+>     - [Michael Eriksen Benros](https://orcid.org/0000-0003-4939-9465) (Sponsor and Principal Investigator)
+> -   **Zenodo DOI archives**: 
+>     - [Pre-DBL and post-DBL code](`r code_doi`)
+>     - [Tables, Listings and Figures for primary publication](`r tlf_pp_doi`) (available after primary publication is published)
+>     - [Tables, Listings and Figures for clinical trial report](`r tlf_ctr_doi`) (available after secondary outcomes are published)
+>     - [Statistical Analysis Plan](`r sap_doi`)
 
 ------------------------------------------------------------------------
 

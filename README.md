@@ -24,32 +24,31 @@
 > - [**Statistical Analysis
 >   Plan**](https://doi.org/10.5281/zenodo.23343482)
 > - **DEXA-PSYCH team**:
-> - - [Troels Boldt Rømer](https://orcid.org/0000-0002-0832-2667)
+>   - [Troels Boldt Rømer](https://orcid.org/0000-0002-0832-2667)
 >     (Sub-Investigator)
-> - - [Camilla Goetzsche
+>   - [Camilla Goetzsche
 >     Frederiksen](https://orcid.org/0000-0002-4475-7617)
 >     (Sub-Investigator)
-> - - Pernille Bølling Hansen (Sub-Investigator)
-> - - [Eva Nina Sparre Wandall](https://orcid.org/0009-0008-1745-6027)
+>   - Pernille Bølling Hansen (Sub-Investigator)
+>   - [Eva Nina Sparre Wandall](https://orcid.org/0009-0008-1745-6027)
 >     (Statistician)
-> - - Sille Holst (Research Nurse)
-> - - [Rune Haubo Bojesen
+>   - Sille Holst (Research Nurse)
+>   - [Rune Haubo Bojesen
 >     Christensen](https://orcid.org/0000-0002-4494-3399) (Trial
 >     Statistician)
-> - - [Michael Eriksen Benros](https://orcid.org/0000-0003-4939-9465)
+>   - [Michael Eriksen Benros](https://orcid.org/0000-0003-4939-9465)
 >     (Sponsor and Principal Investigator)
 > - **Zenodo DOI archives**:
-> - - [Pre-DBL and post-DBL
+>   - [Pre-DBL and post-DBL
 >     code](https://doi.org/10.5281/zenodo.23341773)
-> - - [Tables, Listings and Figures for primary
+>   - [Tables, Listings and Figures for primary
 >     publication](https://doi.org/10.5281/zenodo.23350243) (available
 >     after primary publication is published)
-> - - [Tables, Listings and Figures for clinical trial
+>   - [Tables, Listings and Figures for clinical trial
 >     report](https://doi.org/10.5281/zenodo.23349388) (available after
 >     secondary outcomes are published)
-> - - [Statistical Analysis
+>   - [Statistical Analysis
 >     Plan](https://doi.org/10.5281/zenodo.23343482)
->     <!-- > -   **Last edits**: 2026-10-21 -->
 
 ------------------------------------------------------------------------
 

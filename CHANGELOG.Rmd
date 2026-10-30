@@ -22,35 +22,47 @@ knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
 #| label: get_urls
 #| include: false
 
-# Get list of Git info:
-info <- gert::git_info()
-
-# Get github-url to repo:
-remotes      <- gert::git_remote_list()
-url          <- remotes$url[remotes$name == "origin"]
-url          <- gsub("\\.git$", "", url)
-pre_dbl_url  <- paste0(url, "/releases/tag/pre-dbl-v1.0")
-post_dbl_url <- paste0(url, "/releases/tag/post-dbl-v1.0")
-commit_url   <- paste0(url, "/tree/", info$commit)
-main_url     <- paste0(url, "/tree/main")
-diff_url     <- paste0(url, "/compare/pre-dbl-v1.0...post-dbl-v1.0")
-# citation_url <- paste0(url, "/blob/main/CITATION.cff")
-# renvlock_url <- paste0(url, "/blob/main/renv.lock")
-
-# Get tags for releases (pre- and post-dbl):
-tags <- gert::git_tag_list()
-setDT(tags)
-tag_here <- "none"
-if(nrow(tags) > 0) tag_here <- tags$name[tags$commit == info$commit]
-
-pre_dbl_SHA  <- tags[name == "pre-dbl-v1.0", commit]
-post_dbl_SHA <- tags[name == "post-dbl-v1.0", commit]
-
+# Some git-functions:
+get_url <- function() {
+  remotes <- gert::git_remote_list()
+  url     <- remotes$url[remotes$name == "origin"]
+  gsub("\\.git$", "", url)
+}
+tag_url     <- function(tag) paste0(get_url(), "/tree/", tag)
+release_url <- function(release) paste0(get_url(), "/releases/tag/", release)
 # Make compare-url 2 previous tag or SHA:
 compare2prev <- function(prev, current = gert::git_info()$commit) {
   paste0(url, "/compare/", prev, "...", current)
 }
 # compare2prev("pre-dbl-v1.0")
+tag_sha <- function(tag) {
+  stopifnot(is.character(tag) && length(tag) == 1L)
+  tags <- gert::git_tag_list() |> as.data.table()
+  stopifnot(tags[, tag %in% name])
+  tags[name == tag][1L, commit]
+}
+tag_name <- function(sha) { # sha <- info$commit
+  stopifnot(is.character(sha) && length(sha) == 1L)
+  tags <- gert::git_tag_list() |> as.data.table()
+  if(!tags[, sha %in% commit]) "none" else tags[sha == commit][1L, name]
+}
+
+
+# Get list of Git info:
+info <- gert::git_info()
+
+# Get github-url to repo:
+url          <- get_url()
+pre_dbl_url  <- release_url("pre-dbl-v1.0")
+post_dbl_url <- release_url("post-dbl-v1.0")
+commit_url   <- tag_url(info$commit)
+main_url     <- tag_url("main")
+diff_url     <- compare2prev(prev = "pre-dbl-v1.0", current = "post-dbl-v1.0")
+pre_dbl_SHA  <- tag_sha("pre-dbl-v1.0")
+post_dbl_SHA <- tag_sha("post-dbl-v1.0")
+tag_here     <- tag_name(info$commit)
+
+tag_sha("pre-dbl-v1.0") |> tag_url()
 
 # Versions (write out in text for each release):
 quarto_v <- as.character(quarto::quarto_version())
@@ -68,9 +80,11 @@ R.version.string
 - Pre-specified and pre-programmed results of the statistical analyses for the DEXA-PSYCH trial are available in in browsable web-books containing the so-called Tables, Listings, and Figures (TLF-books).
 - Additional post-hoc results will be made available when produced.
 - Archived code or results are never edited, tags are not moved, archived books are not replaced, and corrections appear as new releases.
+- Tags identify snapshots of the code base. 
+- Releases are made primarily to publish new results or to correct existing results. Note that all releases are tags but not all tags are releases.
 
 
-**Releases are labelled by the kind of change:**
+**Tags are versioned by the kind of change:**
 
 | Type        | Meaning                                             | Version  |
 |---          |---                                                  |---       |
@@ -79,13 +93,17 @@ R.version.string
 | Correction  | Visible changes to presented results.               | `vx.0.0` |
 
 
-## `v1.0.1`---`r Sys.Date()` (tag [unreleased](`r main_url`))
+## [v1.0.1-draft](`r main_url`) --- `r Sys.Date()` (no release)
 
 - **Type:** Maintenance 
+- **Corrections:** None
 - **Additions:** None
-- **Major changes:** None
+- **Major changes:** 
+  1. Save `rds` files of results of manual analyses to enable reproducibility checks at full precision (checks at the displayed precision levels is already covered by `html` tables.)
+  1. Add Code to perform reproducibility checks of all results and derived data.
 - **Minor changes:** 
-  - Add Changelog to repo.
+  1. Add Change-log to repo.
+  1. `renv` lock file update with packages 3 packages (`httr`, `rvest`, `selectr`)
 - **Effect on results:** None 
   - Reproducibility checks showed no differences to `post-dbl-v1.0`.
 - **Commit:** [HEAD](`r main_url`)
@@ -93,21 +111,25 @@ R.version.string
 - **Environment:** R version 4.5.2 (2025-10-31 ucrt), Quarto 1.9.38, Pandoc 3.8.3.
 
 
-## `v1.0.0`---2026-10-23 (tag [post-dbl-v1.0](`r post_dbl_url`))
+## [v1.0.0](`r tag_url("post-dbl-v1.0")`) --- 2026-10-23 (release [post-dbl-v1.0](`r release_url("post-dbl-v1.0")`))
 
 - **Type:** Baseline---first post-database-lock release.
-- **Summary:** Analysis code as used for the post-DBL analyses. 
-- **Commit:** [`r post_dbl_SHA`](`r paste0(url, "/tree/", post_dbl_SHA)`)
+- **Summary:** Analysis code as used for the post-DBL analyses.
+- **Major changes:** None
+- **Minor changes:** Details are [in the release notice](`r release_url("post-dbl-v1.0")`)
+  1. Change `import_randomization_list` flag from `FALSE` to `TRUE` to apply the true randomization variable.
+  1. Fix minor bug to display the testing hierarchy correctly.
+- **Commit:** [`r tag_sha("post-dbl-v1.0")`](`r tag_sha("post-dbl-v1.0") |> tag_url()`)
 - **Changes to code:** [compare-view](`r diff_url`)
 - **Zenodo code archive:** <https://doi.org/10.5281/zenodo.23587985>
 - **Environment:** R version 4.5.2 (2025-10-31 ucrt), Quarto 1.9.38, Pandoc 3.8.3.
 
 
-## Pre-DBL---2026-10-21 (tag [pre-dbl-v1.0](`r pre_dbl_url`))
+## [Pre-DBL](`r tag_url("pre-dbl-v1.0")`) --- 2026-10-21 (release [pre-dbl-v1.0](`r release_url("pre-dbl-v1.0")`))
 
 - **Type:** Baseline---blinded treatment assignment.
 - **Summary:** Analysis code locked before unblinding.
-- **Commit:** [`r pre_dbl_SHA`](`r paste0(url, "/tree/", pre_dbl_SHA)`)
+- **Commit:** [`r tag_sha("pre-dbl-v1.0")`](`r tag_sha("pre-dbl-v1.0") |> tag_url()`)
 - **Changes to code:** Baseline.
 - **Zenodo code archive:** <https://doi.org/10.5281/zenodo.23341773> 
 - **Environment:** R version 4.5.2 (2025-10-31 ucrt), Quarto 1.9.38, Pandoc 3.8.3. 

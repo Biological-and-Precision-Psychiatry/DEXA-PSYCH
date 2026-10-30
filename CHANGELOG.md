@@ -13,8 +13,12 @@ documented here.**
 - Archived code or results are never edited, tags are not moved,
   archived books are not replaced, and corrections appear as new
   releases.
+- Tags identify snapshots of the code base.
+- Releases are made primarily to publish new results or to correct
+  existing results. Note that all releases are tags but not all tags are
+  releases.
 
-**Releases are labelled by the kind of change:**
+**Tags are versioned by the kind of change:**
 
 | Type        | Meaning                                             | Version  |
 |-------------|-----------------------------------------------------|----------|
@@ -22,13 +26,21 @@ documented here.**
 | Addition    | New results. Existing results are unchanged.        | `v1.x.0` |
 | Correction  | Visible changes to presented results.               | `vx.0.0` |
 
-## `v1.0.1`—2026-10-29 (tag [unreleased](https://github.com/Biological-and-Precision-Psychiatry/DEXA-PSYCH/tree/main))
+## [v1.0.1-draft](https://github.com/Biological-and-Precision-Psychiatry/DEXA-PSYCH/tree/main) — 2026-10-30 (no release)
 
 - **Type:** Maintenance
+- **Corrections:** None
 - **Additions:** None
-- **Major changes:** None
+- **Major changes:**
+  1.  Save `rds` files of results of manual analyses to enable
+      reproducibility checks at full precision (checks at the displayed
+      precision levels is already covered by `html` tables.)
+  2.  Add Code to perform reproducibility checks of all results and
+      derived data.
 - **Minor changes:**
-  - Add Changelog to repo.
+  1.  Add Change-log to repo.
+  2.  `renv` lock file update with packages 3 packages (`httr`, `rvest`,
+      `selectr`)
 - **Effect on results:** None
   - Reproducibility checks showed no differences to `post-dbl-v1.0`.
 - **Commit:**
@@ -38,10 +50,16 @@ documented here.**
 - **Environment:** R version 4.5.2 (2025-10-31 ucrt), Quarto 1.9.38,
   Pandoc 3.8.3.
 
-## `v1.0.0`—2026-10-23 (tag [post-dbl-v1.0](https://github.com/Biological-and-Precision-Psychiatry/DEXA-PSYCH/releases/tag/post-dbl-v1.0))
+## [v1.0.0](https://github.com/Biological-and-Precision-Psychiatry/DEXA-PSYCH/tree/post-dbl-v1.0) — 2026-10-23 (release [post-dbl-v1.0](https://github.com/Biological-and-Precision-Psychiatry/DEXA-PSYCH/releases/tag/post-dbl-v1.0))
 
 - **Type:** Baseline—first post-database-lock release.
 - **Summary:** Analysis code as used for the post-DBL analyses.
+- **Major changes:** None
+- **Minor changes:** Details are [in the release
+  notice](https://github.com/Biological-and-Precision-Psychiatry/DEXA-PSYCH/releases/tag/post-dbl-v1.0)
+  1.  Change `import_randomization_list` flag from `FALSE` to `TRUE` to
+      apply the true randomization variable.
+  2.  Fix minor bug to display the testing hierarchy correctly.
 - **Commit:**
   [3d17df8c7c692590417dff431ec1718ebbe7bcd5](https://github.com/Biological-and-Precision-Psychiatry/DEXA-PSYCH/tree/3d17df8c7c692590417dff431ec1718ebbe7bcd5)
 - **Changes to code:**
@@ -50,7 +68,7 @@ documented here.**
 - **Environment:** R version 4.5.2 (2025-10-31 ucrt), Quarto 1.9.38,
   Pandoc 3.8.3.
 
-## Pre-DBL—2026-10-21 (tag [pre-dbl-v1.0](https://github.com/Biological-and-Precision-Psychiatry/DEXA-PSYCH/releases/tag/pre-dbl-v1.0))
+## [Pre-DBL](https://github.com/Biological-and-Precision-Psychiatry/DEXA-PSYCH/tree/pre-dbl-v1.0) — 2026-10-21 (release [pre-dbl-v1.0](https://github.com/Biological-and-Precision-Psychiatry/DEXA-PSYCH/releases/tag/pre-dbl-v1.0))
 
 - **Type:** Baseline—blinded treatment assignment.
 - **Summary:** Analysis code locked before unblinding.
