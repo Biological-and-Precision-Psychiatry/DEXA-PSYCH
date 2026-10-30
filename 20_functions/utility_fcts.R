@@ -412,4 +412,22 @@ get_function_lines <- function(file, fun_name, roxygen = FALSE) {
 }
 
 
+#' Grow a list of tables
+#' 
+#' Helper-function to assist in collecting tables for saving list of tables in 
+#' an `.rds` file. Tables are named by its endpoint id.
+#'
+#' @param table a `data.table` to save to a list
+#' @param regi a metadata row
+#' @param original optional list to grow
+#'
+#' @returns a named list of tables.
+add2list <- function(table, regi, original = NULL) {
+  stopifnot(is.data.table(table),
+            is.data.table(regi) && nrow(regi) == 1L,
+            is.null(original) || is.list(original))
+  new <- list(table) |> setNames(nm = regi[1L, endpoint_id])
+  if(is.null(original)) new else c(original, new)
+}
+
 

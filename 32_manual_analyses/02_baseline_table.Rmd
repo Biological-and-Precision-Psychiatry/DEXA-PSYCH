@@ -116,6 +116,16 @@ write_xlsx(y, path = paste0("02_data_derived/",
                             "baseline_characteristics_table1.xlsx"))
 ```
 
+Save table as list in `.rds` file to enable reproducibility checks:
+```{r}
+tlf_reg <- get_metadata()
+regi <- tlf_reg[file_stem == "baseline_table"]
+
+dt_list <- setNames(list(y), regi[1L, endpoint_id])
+saveRDS(dt_list, file = "50_output_db/outputs/baseline_table_overview.rds")
+```
+
+
 Make gt-table:
 ```{r}
 y2 <- copy(y)
@@ -145,9 +155,6 @@ for(footer in footer_list) {
     gt_tab <- gt_tab |>
       tab_source_note(source_note = md(as.character(footer)))
   }
-
-tlf_reg <- get_metadata()
-regi <- tlf_reg[file_stem == "baseline_table"]
 
 save_gt_table(gt_tab, 
               regi = regi, 

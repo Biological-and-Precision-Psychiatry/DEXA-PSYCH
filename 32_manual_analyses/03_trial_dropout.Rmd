@@ -160,7 +160,7 @@ save_gt_table(gt_tab,
               verbose = TRUE)
 ```
 
-Table by treatment group.
+Table by treatment group:
 ```{r results='asis'}
 Xb[f_visit == "day0", (nms) := ""]
 gt_tab <- mk_gt_table(Xb, footer_list = footer_list) 
@@ -171,6 +171,15 @@ regi <- tlf_reg[file_stem == "observation_status_by_treatment"]
 save_gt_table(gt_tab, 
               regi    = regi,
               verbose = TRUE)
+```
+
+Save list of tables in `.rds` file to enable reproducibility checks:
+```{r}
+dt_list <- list(X, Xb)
+names(dt_list) <- tlf_reg[file_stem %in% c("observation_status_overall", 
+                                           "observation_status_by_treatment"), 
+                          endpoint_id]
+saveRDS(dt_list, file = "50_output_db/outputs/observation_status_overview.rds")
 ```
 
 

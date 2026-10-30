@@ -134,9 +134,13 @@ ae_sum_gt_all
 
 Save gt table:
 ```{r}
+regi <- tlf_reg[file_stem == "all_adverse_events_summary"][1L]
 save_gt_table(ae_sum_gt_all, 
-              regi = tlf_reg[file_stem == "all_adverse_events_summary"], 
+              regi = regi, 
               verbose = TRUE)
+
+# Also save to dt-list:
+dt_list <- add2list(ae_sum_dt_all, regi)
 ```
 
 Make version of the same table for OVERVIEW-part of TLF-book:
@@ -173,9 +177,13 @@ ae_sum_gt_ser
 
 Save gt table
 ```{r mk_summary_table_serious_events}
+regi <- tlf_reg[file_stem == "serious_adverse_events_summary"]
 save_gt_table(ae_sum_gt_ser, 
-              regi = tlf_reg[file_stem == "serious_adverse_events_summary"], 
+              regi = regi, 
               verbose = TRUE)
+
+# Also save to dt-list:
+dt_list <- add2list(ae_sum_dt_ser, regi, dt_list)
 ```
 
 
@@ -191,9 +199,13 @@ ae_sum_gt_top10
 
 Save gt table
 ```{r mk_summary_table_top10}
+regi <- tlf_reg[file_stem == "most_common_adverse_events_summary"]
 save_gt_table(ae_sum_gt_top10, 
-              regi = tlf_reg[file_stem == "most_common_adverse_events_summary"], 
+              regi = regi, 
               verbose = TRUE)
+
+# Also save to dt-list:
+dt_list <- add2list(ae_sum_dt_top10, regi, dt_list)
 ```
 
 
@@ -209,9 +221,13 @@ ae_sum_gt_prem
 
 Save gt table
 ```{r}
+regi <- tlf_reg[file_stem == "premature_discontinuation_adverse_events_summary"]
 save_gt_table(ae_sum_gt_prem, 
-              regi = tlf_reg[file_stem == "premature_discontinuation_adverse_events_summary"], 
+              regi = regi, 
               verbose = TRUE)
+
+# Also save to dt-list:
+dt_list <- add2list(ae_sum_dt_prem, regi, dt_list)
 ```
 
 
@@ -227,9 +243,13 @@ ae_sum_gt_severe
 
 Save gt table
 ```{r}
+regi <- tlf_reg[file_stem == "severe_to_fatal_adverse_events_summary"]
 save_gt_table(ae_sum_gt_severe, 
-              regi = tlf_reg[file_stem == "severe_to_fatal_adverse_events_summary"], 
+              regi = regi, 
               verbose = TRUE)
+
+# Also save to dt-list:
+dt_list <- add2list(ae_sum_dt_severe, regi, dt_list)
 ```
 
 
@@ -245,9 +265,13 @@ ae_sum_gt_rel
 
 Save gt table
 ```{r}
+regi <- tlf_reg[file_stem == "adverse_events_related_to_treatment_summary"]
 save_gt_table(ae_sum_gt_rel, 
-              regi = tlf_reg[file_stem == "adverse_events_related_to_treatment_summary"], 
+              regi = regi, 
               verbose = TRUE)
+
+# Also save to dt-list:
+dt_list <- add2list(ae_sum_dt_rel, regi, dt_list)
 ```
 
 
@@ -305,9 +329,13 @@ meddra_all_gt
 
 Save gt table:
 ```{r}
+regi <- tlf_reg[file_stem == "all_adverse_events_by_meddra"]
 save_gt_table(meddra_all_gt, 
-              regi = tlf_reg[file_stem == "all_adverse_events_by_meddra"], 
+              regi = regi, 
               verbose = TRUE)
+
+# Also save to dt-list:
+dt_list <- add2list(meddra_all_dt, regi, dt_list)
 ```
 
 
@@ -323,9 +351,13 @@ meddra_ser_gt
 
 Save gt table:
 ```{r}
+regi <- tlf_reg[file_stem == "serious_adverse_events_by_meddra"]
 save_gt_table(meddra_ser_gt, 
-              regi = tlf_reg[file_stem == "serious_adverse_events_by_meddra"], 
+              regi = regi, 
               verbose = TRUE)
+
+# Also save to dt-list:
+dt_list <- add2list(meddra_ser_dt, regi, dt_list)
 ```
 
 
@@ -341,9 +373,13 @@ meddra_top10_gt
 
 Save gt table:
 ```{r}
+regi <- tlf_reg[file_stem == "most_common_adverse_events_by_meddra"]
 save_gt_table(meddra_top10_gt, 
-              regi = tlf_reg[file_stem == "most_common_adverse_events_by_meddra"], 
+              regi = regi, 
               verbose = TRUE)
+
+# Also save to dt-list:
+dt_list <- add2list(meddra_top10_dt, regi, dt_list)
 ```
 
 
@@ -359,9 +395,13 @@ meddra_gt_prem
 
 Save gt table:
 ```{r}
+regi <- tlf_reg[file_stem == "premature_discontinuation_by_meddra"]
 save_gt_table(meddra_gt_prem, 
-              regi = tlf_reg[file_stem == "premature_discontinuation_by_meddra"], 
+              regi = regi, 
               verbose = TRUE)
+
+# Also save to dt-list:
+dt_list <- add2list(meddra_dt_prem, regi, dt_list)
 ```
 
 
@@ -378,9 +418,13 @@ meddra_gt_severe
 
 Save gt table:
 ```{r}
+regi <- tlf_reg[file_stem == "severe_to_fatal_events_by_meddra"]
 save_gt_table(meddra_gt_severe, 
-              regi = tlf_reg[file_stem == "severe_to_fatal_events_by_meddra"], 
+              regi = regi, 
               verbose = TRUE)
+
+# Also save to dt-list:
+dt_list <- add2list(meddra_dt_severe, regi, dt_list)
 ```
 
 
@@ -397,9 +441,13 @@ meddra_gt_rel
 
 Save gt table:
 ```{r}
+regi <- tlf_reg[file_stem == "adverse_events_related_to_treatment_by_meddra"]
 save_gt_table(meddra_gt_rel, 
-              regi = tlf_reg[file_stem == "adverse_events_related_to_treatment_by_meddra"], 
+              regi = regi, 
               verbose = TRUE)
+
+# Also save to dt-list:
+dt_list <- add2list(meddra_dt_rel, regi, dt_list)
 ```
 
 
@@ -534,9 +582,13 @@ ll_ser_gt
 
 Save table:
 ```{r}
+regi <- tlf_reg[file_stem == "line_listing_SAE"]
 save_gt_table(ll_ser_gt, 
-              regi = tlf_reg[file_stem == "line_listing_SAE"], 
+              regi = regi, 
               verbose = TRUE)
+
+# Also save to dt-list:
+dt_list <- add2list(ll_ser, regi, dt_list)
 ```
 
 
@@ -635,9 +687,13 @@ ll_aepm_gt
 
 Save gt table:
 ```{r}
+regi <- tlf_reg[file_stem == "line_listing_premature_discontinuation"]
 save_gt_table(ll_aepm_gt, 
-              regi = tlf_reg[file_stem == "line_listing_premature_discontinuation"], 
+              regi = regi, 
               verbose = TRUE)
+
+# Also save to dt-list:
+dt_list <- add2list(ll_aepm, regi, dt_list)
 ```
 
 
@@ -674,9 +730,13 @@ adm_gt28 <- add_footer_lines_to_gt(adm_gt28, footer_list_admissions)
 adm_gt28
 
 # Save gt table
+regi <- tlf_reg[file_stem == "serious_clinical_events"]
 save_gt_table(adm_gt28, 
-              regi = tlf_reg[file_stem == "serious_clinical_events"], 
+              regi = regi, 
               verbose = TRUE)
+
+# Also save to dt-list:
+dt_list <- add2list(adm_dt28, regi, dt_list)
 ```
 
 Make version of the same table for OVERVIEW-part of TLF-book:
@@ -697,6 +757,13 @@ adm_gt28_ov
 save_gt_table(adm_gt28_ov,
               regi = tlf_reg[file_stem == "serious_clinical_events_overview"],
               verbose = TRUE)
+```
+
+Save list of dt-tables to `.rds` file:
+```{r}
+stopifnot(anyDuplicated(names(dt_list)) == 0,
+          all(sapply(dt_list, is.data.table)))
+saveRDS(dt_list, file = "50_output_db/outputs/adverse_events_safety.rds")
 ```
 
 

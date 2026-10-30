@@ -201,10 +201,11 @@ Overview table for the one-way tipping point analyses of MADRS~10~ change-from-b
 ```{r}
 regi <- tlf_reg[analysis == "tipping1" & estimand == "policy" & 
                   tlf_type == "table"]
-gt_tab <- mk_gt_table(tmp3[Estimand == "policy", -c("Estimand", "Type")], 
-            footer_list = footer_list_tp_policy)
+dt_tab <- tmp3[Estimand == "policy", -c("Estimand", "Type")]
+gt_tab <- mk_gt_table(dt_tab, footer_list = footer_list_tp_policy)
 gt_tab
 save_gt_table(gt_tab, regi = regi, verbose = TRUE)
+dt_list_p <- add2list(table = dt_tab, regi)
 ```
 
 
@@ -214,10 +215,11 @@ Overview table for the one-way tipping point analysis of MADRS~10~ change-from-b
 ```{r}
 regi <- tlf_reg[analysis == "tipping1" & estimand == "efficacy" & 
                   tlf_type == "table"]
-gt_tab <- mk_gt_table(tmp3[Estimand == "efficacy", -c("Estimand", "Type")], 
-            footer_list = footer_list_tp_efficacy)
+dt_tab <- tmp3[Estimand == "efficacy", -c("Estimand", "Type")]
+gt_tab <- mk_gt_table(dt_tab, footer_list = footer_list_tp_efficacy)
 gt_tab
 save_gt_table(gt_tab, regi = regi, verbose = TRUE)
+dt_list_e <- add2list(table = dt_tab, regi)
 ```
 
 ### Example of one-way tipping point figure
@@ -339,10 +341,11 @@ Overview table for the two-way tipping point analyses of MADRS~10~ change-from-b
 ```{r}
 regi <- tlf_reg[analysis == "tipping2" & estimand == "policy" & 
                   tlf_type == "table"]
-gt_tab <- mk_gt_table(tmp4[Estimand == "policy", -c("Estimand", "Type")], 
-            footer_list = footer_list_tp_policy)
+dt_tab <- tmp4[Estimand == "policy", -c("Estimand", "Type")]
+gt_tab <- mk_gt_table(dt_tab, footer_list = footer_list_tp_policy)
 gt_tab
 save_gt_table(gt_tab, regi = regi, verbose = TRUE)
+dt_list_p <- add2list(dt_tab, regi, dt_list_p)
 ```
 
 
@@ -352,10 +355,11 @@ Overview table for the two-way tipping point analysis of MADRS~10~ change-from-b
 ```{r}
 regi <- tlf_reg[analysis == "tipping2" & estimand == "efficacy" & 
                   tlf_type == "table"]
-gt_tab <- mk_gt_table(tmp4[Estimand == "efficacy", -c("Estimand", "Type")], 
-            footer_list = footer_list_tp_efficacy)
+dt_tab <- tmp4[Estimand == "efficacy", -c("Estimand", "Type")]
+gt_tab <- mk_gt_table(dt_tab, footer_list = footer_list_tp_efficacy)
 gt_tab
 save_gt_table(gt_tab, regi = regi, verbose = TRUE)
+dt_list_e <- add2list(dt_tab, regi, dt_list_e)
 ```
 
 
@@ -365,6 +369,17 @@ save_gt_table(gt_tab, regi = regi, verbose = TRUE)
 path_to_fig <- cases[Visit == "day14"][1, file.path(folder, paste0(file_stem, ".png"))]
 knitr::include_graphics(normalizePath(path_to_fig, winslash = "/"), 
                         auto_pdf = TRUE, rel_path = FALSE)
+```
+
+Save list of dt-tables to `.rds` file:
+```{r}
+stopifnot(anyDuplicated(names(dt_list_p)) == 0,
+          all(sapply(dt_list_p, is.data.table)))
+saveRDS(dt_list_p, file = "50_output_db/outputs/tipping_point_policy.rds")
+
+stopifnot(anyDuplicated(names(dt_list_e)) == 0,
+          all(sapply(dt_list_e, is.data.table)))
+saveRDS(dt_list_e, file = "50_output_db/outputs/tipping_point_efficacy.rds")
 ```
 
 

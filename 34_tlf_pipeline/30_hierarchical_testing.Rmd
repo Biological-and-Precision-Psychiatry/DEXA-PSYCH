@@ -329,11 +329,16 @@ th_gt <- add_footer_lines_to_gt(th_gt, th_footer)
 th_gt
 ```
 
-Save gt table
+Save dt and gt tables:
 ```{r}
+regi <- tlf_reg[file_stem == "hierarchical_testing_results"]
 save_gt_table(th_gt, 
-              regi = tlf_reg[file_stem == "hierarchical_testing_results"], 
+              regi = regi, 
               verbose = TRUE)
+
+# Save dt-list to rds-file:
+dt_list <- add2list(th_dt, regi)
+saveRDS(dt_list, file = "50_output_db/outputs/summary_primary_key_secondary_analyses_overview.rds")
 ```
 
 

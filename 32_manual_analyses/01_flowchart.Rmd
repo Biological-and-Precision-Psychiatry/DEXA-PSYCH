@@ -283,6 +283,15 @@ efficacy_estimand <- adat[f_visit %in% c("day4", "day7") &
 flow_dt <- merge(flow_dt, efficacy_estimand, all.x = TRUE)
 ```
 
+Save flowchart data to `.rds` file:
+```{r}
+tlf_reg <- get_metadata()
+regi <- tlf_reg[file_stem == "consort_diagram"][1L]
+dt_list <- list(flow_dt) |> setNames(nm = regi[, endpoint_id])
+
+saveRDS(dt_list, file = "50_output_db/outputs/flowchart_overview.rds")
+```
+
 
 ## Creating flowchart with consort package
 

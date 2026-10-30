@@ -440,9 +440,11 @@ gt_tab
 
 Save `gt` table
 ```{r}
+regi <- tlf_reg[file_stem == "safety_rating_scales_overview"]
 save_gt_table(gt_tab,
-              regi = tlf_reg[file_stem == "safety_rating_scales_overview"],
+              regi = regi,
               verbose = TRUE)
+dt_list <- add2list(.dd, regi)
 ```
 
 
@@ -589,9 +591,11 @@ gt_tab
 
 Save `gt` table
 ```{r}
+regi <- tlf_reg[file_stem == "vital_signs_overview"]
 save_gt_table(gt_tab,
-              regi = tlf_reg[file_stem == "vital_signs_overview"],
+              regi = regi,
               verbose = TRUE)
+dt_list <- add2list(.dd, regi, dt_list)
 ```
 
 
@@ -709,9 +713,18 @@ gt_tab
 
 Save `gt` table
 ```{r}
+regi <- tlf_reg[file_stem == "biochemistry_overview"]
 save_gt_table(gt_tab,
-              regi = tlf_reg[file_stem == "biochemistry_overview"],
+              regi = regi,
               verbose = TRUE)
+dt_list <- add2list(.dd, regi, dt_list)
+```
+
+Save list of dt-tables to `.rds` file:
+```{r}
+stopifnot(anyDuplicated(names(dt_list)) == 0,
+          all(sapply(dt_list, is.data.table)))
+saveRDS(dt_list, file = "50_output_db/outputs/effect_overview.rds")
 ```
 
 
