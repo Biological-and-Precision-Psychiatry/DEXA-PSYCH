@@ -54,7 +54,11 @@ source_dir("20_functions")
 
 Path to reference repo:
 ```{r}
-ref_repo <- "L:/Auditdata/DEXA-PSYCH/15 - Databehandling/12 - GitHub Repository Dump/Versioned dumps/post-dbl-v1.0"
+ref_dir  <- "L:/Auditdata/DEXA-PSYCH/15 - Databehandling/12 - GitHub Repository Dump/Versioned dumps/"
+version  <- "post-dbl-v1.0"
+version  <- "v1.0.1"
+ref_repo <- paste0(ref_dir, version)
+stopifnot(dir.exists(ref_repo))
 ```
 
 Define functions to print relevant differences from results of compare functions and optionally stop processing with an error:
