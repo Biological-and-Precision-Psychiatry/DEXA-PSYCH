@@ -114,6 +114,36 @@ render_multiple_rmd("01_comparison_of_independent_programming.Rmd",
 ```
 
 
+## Files in `85_reproducibility_checks` directory
+
+Make overview of `Rmd` that can be processed:
+```{r 85_reproducibility_checks}
+DIR <- "85_reproducibility_checks/"
+filenames <- list.files(DIR, pattern="Rmd$")
+filenames <- filenames[!grepl("^00|^99", filenames)]
+
+render_multiple_rmd(filenames, 
+                    path = DIR, 
+                    params = list(stop_on_error = TRUE))
+```
+
+
+## Files in root
+
+```{r root}
+# Only process files in public repo:
+git_url <- gert::git_remote_info()$url
+in_public_rep <- grepl("DEXA-PSYCH\\.git$", git_url)
+
+if(in_public_rep) {
+  filenames <- c("README.Rmd", "CHANGELOG.Rmd")
+  stopifnot(all(file.exists(filenames)))
+  render_multiple_rmd(filenames, path = ".") 
+}
+```
+
+
+
 ## Appendix
 
 ```{r mk_fun_appendix_code, include=FALSE, eval=FALSE}

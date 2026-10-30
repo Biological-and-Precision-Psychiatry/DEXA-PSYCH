@@ -1,0 +1,288 @@
+---
+title: "Reproducibility of results and derived data"
+author: "Rune Haubo B Christensen"
+date: "`r Sys.Date()`"
+params: 
+  stop_on_error: FALSE
+output:
+  html_document:
+    toc: true
+    toc_float: true
+  pdf_document:
+    toc: true
+header-includes: 
+- \usepackage{float}
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup0, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, collapse = TRUE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+options(knitr.kable.NA = '')
+
+# wider output when knit'ing:
+if (isTRUE(getOption("knitr.in.progress")) && !knitr::is_latex_output()) {
+  options(width = 110)
+}
+```
+
+## Introduction 
+
+This file assesses the reproducibility of the trial results by comparing all HTML-tables, the output database and imputed MMRM datasets in the current repo to a reference repo identified below. 
+
+Knitting the file will expose any differences in results between the results produced by the current repo and the reference repo. If the parameter `params$stop_on_error` is `TRUE` processing the file (ie, running the script, aka. knitting the file) will exit the processing with an error. If `FALSE` any changes are simply exposed but no error is produced.
+
+Value of `params$stop_on_error`: 
+```{r}
+params$stop_on_error
+```
+
+
+## Setup 
+
+```{r setup, results='hide', message=FALSE, warning=FALSE}
+library(data.table)
+library(emmeans)    # required for output db checks
+library(waldo)
+library(rvest)
+library(CRP)
+
+source("20_functions/source_dir.R")
+source_dir("20_functions")
+```
+
+Path to reference repo:
+```{r}
+ref_repo <- "L:/Auditdata/DEXA-PSYCH/15 - Databehandling/12 - GitHub Repository Dump/Versioned dumps/post-dbl-v1.0"
+```
+
+Define functions to print relevant differences from results of compare functions and optionally stop processing with an error:
+```{r}
+print_html_diffs <- function(diffs) {
+  sum_diffs <- diffs$summary
+  has_t_diffs <- sum_diffs[, which(table_diffs > 0)]
+  has_f_diffs <- sum_diffs[, which(footer_diffs > 0)]
+  has_diffs <- unique(c(has_t_diffs, has_f_diffs))
+  if(length(has_diffs)) {
+    message("Summary of differences:")
+    print(sum_diffs[has_diffs])
+    message("Table differences:")
+    print(diffs$table_diffs[sum_diffs[has_t_diffs, file]])
+    message("Table differences:")
+    print(diffs$footer_diffs[sum_diffs[has_f_diffs, file]])
+  }
+  invisible(diffs)
+}
+
+print_rds_diffs <- function(diffs) {
+  sum_diffs <- diffs$summary
+  has_diffs <- sum_diffs[, which(n_diffs > 0)]
+  if(length(has_diffs)) {
+    message("Summary of differences:")
+    print(sum_diffs[has_diffs])
+    message("File differences:")
+    print(diffs$diffs[sum_diffs[has_diffs, file]])
+  }
+  invisible(diffs)
+}
+
+stop_html_diffs <- function(diffs, stop_on_error = TRUE) {
+  stopifnot(is.logical(stop_on_error) && length(stop_on_error) == 1L &&
+              !is.na(stop_on_error))
+  n_diffs <- diffs$summary[, sum(table_diffs > 0 | footer_diffs > 0, na.rm = TRUE)]
+  if(stop_on_error && n_diffs > 0) 
+    stop("Differences found in ", n_diffs, " files.")
+  invisible(NULL)
+}
+
+stop_rds_diffs <- function(diffs, stop_on_error = TRUE) {
+  stopifnot(is.logical(stop_on_error) && length(stop_on_error) == 1L &&
+              !is.na(stop_on_error))
+  n_diffs <- diffs$summary[, sum(n_diffs > 0, na.rm = TRUE)]
+  if(stop_on_error && n_diffs > 0) 
+    stop("Differences found in ", n_diffs, " files.")
+  invisible(NULL)
+}
+
+```
+
+
+## Check reproducibility of HTML outputs
+
+Check all manual tables:
+```{r html_manual_tables}
+diffs <- compare_html_tables(reference_path = ref_repo,
+                             new_path       = ".", 
+                             folder         = "40_tlf_source/tables",
+                             copy_files     = TRUE,
+                             verbose        = TRUE)
+print_html_diffs(diffs)
+stop_html_diffs(diffs, stop_on_error = params$stop_on_error)
+```
+
+Check all auto-generated tables:
+```{r html_auto_tables}
+diffs <- compare_html_tables(reference_path = ref_repo,
+                             new_path       = ".", 
+                             folder         = "40_tlf_source/auto_tables",
+                             copy_files     = TRUE,
+                             verbose        = TRUE)
+print_html_diffs(diffs)
+stop_html_diffs(diffs, stop_on_error = params$stop_on_error)
+```
+
+
+## Check reproducibility of output database
+
+Check output database stored as `data.table` objects in `rds` files:
+```{r output_db}
+diffs <- compare_rds_files(reference_path = ref_repo,
+                           new_path       = ".",
+                           folder         = "50_output_db/outputs",
+                           tolerance      = 1e-6, 
+                           copy_files     = TRUE, 
+                           verbose        = TRUE)
+print_rds_diffs(diffs)
+stop_rds_diffs(diffs, stop_on_error = params$stop_on_error)
+```
+
+Repeat checks to report any differences regardless of tolerance:
+```{r output_db_tol_NULL}
+diffs <- compare_rds_files(reference_path = ref_repo,
+                           new_path       = ".",
+                           folder         = "50_output_db/outputs",
+                           tolerance      = NULL, 
+                           copy_files     = TRUE, 
+                           verbose        = TRUE)
+print_rds_diffs(diffs)
+stop_rds_diffs(diffs, stop_on_error = FALSE)
+```
+
+
+## Check reproducibility of MMRM imputed datasets
+
+Check output database stored as `data.table` objects in `rds` files:
+```{r mmrm_data}
+diffs <- compare_rds_files(reference_path = ref_repo,
+                           new_path       = ".",
+                           folder         = "50_output_db/mmrm_data",
+                           tolerance      = 1e-6, 
+                           copy_files     = TRUE, 
+                           verbose        = TRUE)
+print_rds_diffs(diffs)
+stop_rds_diffs(diffs, stop_on_error = params$stop_on_error)
+```
+
+Repeat checks to report any differences regardless of tolerance:
+```{r mmrm_data_tol_NULL}
+diffs <- compare_rds_files(reference_path = ref_repo,
+                           new_path       = ".",
+                           folder         = "50_output_db/mmrm_data",
+                           tolerance      = NULL, 
+                           copy_files     = TRUE, 
+                           verbose        = TRUE)
+print_rds_diffs(diffs)
+stop_rds_diffs(diffs, stop_on_error = FALSE)
+```
+
+
+## Check reproducibility of derived data
+
+Check database of derived data stored in `rds` files:
+```{r derived_data}
+diffs <- compare_rds_files(reference_path = ref_repo,
+                           new_path       = ".",
+                           folder         = "02_data_derived",
+                           tolerance      = 1e-6, 
+                           copy_files     = TRUE, 
+                           verbose        = TRUE)
+print_rds_diffs(diffs)
+stop_rds_diffs(diffs, stop_on_error = params$stop_on_error)
+```
+
+Repeat checks to report any differences regardless of tolerance:
+```{r derived_data_tol_NULL}
+diffs <- compare_rds_files(reference_path = ref_repo,
+                           new_path       = ".",
+                           folder         = "02_data_derived",
+                           tolerance      = NULL, 
+                           copy_files     = TRUE, 
+                           verbose        = TRUE)
+print_rds_diffs(diffs)
+stop_rds_diffs(diffs, stop_on_error = FALSE)
+```
+
+
+## Check reproducibility of parallel programming outputs
+
+Check database of derived data stored in `rds` files:
+```{r par_prog}
+diffs <- compare_rds_files(reference_path = ref_repo,
+                           new_path       = ".",
+                           folder         = "80_parallel_programming/pp_outputs",
+                           tolerance      = 1e-6, 
+                           copy_files     = TRUE, 
+                           verbose        = TRUE)
+print_rds_diffs(diffs)
+stop_rds_diffs(diffs, stop_on_error = params$stop_on_error)
+```
+
+Repeat checks to report any differences regardless of tolerance:
+```{r par_prog_tol_NULL}
+diffs <- compare_rds_files(reference_path = ref_repo,
+                           new_path       = ".",
+                           folder         = "02_data_derived",
+                           tolerance      = NULL, 
+                           copy_files     = TRUE, 
+                           verbose        = TRUE)
+print_rds_diffs(diffs)
+stop_rds_diffs(diffs, stop_on_error = FALSE)
+```
+
+
+## Appendix
+
+### **R** session info
+
+```{r}
+sessionInfo()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
