@@ -44,7 +44,7 @@ source_dir("20_functions")
 # clear_all(remove             = TRUE,
 #           rm_html            = TRUE,
 #           rm_cache           = FALSE,
-#           rm_checksums       = TRUE)
+#           rm_checksums       = FALSE)
 
 # For a completely clear run, use:
 clear_all(remove             = TRUE,
