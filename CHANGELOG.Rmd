@@ -35,13 +35,19 @@ compare2prev <- function(prev, current = gert::git_info()$commit) {
   paste0(url, "/compare/", prev, "...", current)
 }
 # compare2prev("pre-dbl-v1.0")
-tag_sha <- function(tag) {
+tag_sha <- function(tag, warn = TRUE) {
   stopifnot(is.character(tag) && length(tag) == 1L)
   tags <- gert::git_tag_list() |> as.data.table()
-  stopifnot(tags[, tag %in% name])
+  if(tags[, !tag %in% name]) {
+    if(warn) warning("'tag' is not valid. Valid tags are: ", 
+                     paste(tags[, name], collapse = ", "))
+    return("main") # return HEAD
+  }
   # tags[name == tag][1L, commit] # Note: the 3rd row SHA may not be a valid commit SHA!
-  gert::git_commit_info(tag)$id   # Use this instead
+  gert::git_commit_id(tag)   # Use this instead
 }
+
+
 tag_name <- function(sha) { # sha <- info$commit
   stopifnot(is.character(sha) && length(sha) == 1L)
   tags <- gert::git_tag_list() |> as.data.table()
@@ -63,12 +69,14 @@ pre_dbl_SHA  <- tag_sha("pre-dbl-v1.0")
 post_dbl_SHA <- tag_sha("post-dbl-v1.0")
 tag_here     <- tag_name(info$commit)
 
-tag_sha("pre-dbl-v1.0") |> tag_url()
-
 # Versions (write out in text for each release):
 quarto_v <- as.character(quarto::quarto_version())
 pandoc_v <- as.character(rmarkdown::pandoc_version())
-R.version.string
+
+# Expected versions: (revise stated versions below of not true)
+stopifnot(R.version.string == "R version 4.6.0 (2026-04-24 ucrt)",
+          quarto_v == "1.9.38",
+          pandoc_v == "3.8.3")
 
 ```
 
@@ -94,18 +102,39 @@ R.version.string
 | Correction  | Visible changes to presented results.               | `vx.0.0` |
 
 
-## [v1.0.2-draft](`r main_url`) --- `r Sys.Date()` (no release)
+<!-- ## [v1.0.2-draft](`r main_url`) --- `r Sys.Date()` (no release) -->
 
-- **Type:** Maintenance 
+<!-- - **Type:** Maintenance -->
+<!-- - **Summary:**: Update of computing environment (only) -->
+<!-- - **Corrections:** None -->
+<!-- - **Additions:** None -->
+<!-- - **Major changes:**  -->
+<!--   1. R updated from 4.5.2 to 4.6.0 (newest available at workplace) -->
+<!--   2. All R packages updated to newest available version and `renv.lock` file updated. -->
+<!-- - **Minor changes:** None -->
+<!-- - **Effect on results:**  -->
+<!--   - Reproducibility checks showed no differences in any published results to `v1.0.1`. -->
+<!--   - The attributes of some model objects (MMRM) stored alongside the datasets changed due to package updates. This had no influence on the analysis results to a tolerance of $10^{-6}$ and consequently no number in the published results changed due to this update of the computing environment. -->
+<!-- - **Commit:** [HEAD](`r main_url`) -->
+<!-- - **Changes to code:** [compare-view](`r compare2prev("v1.0.1", current = "main")`) -->
+<!-- - **Environment:** R version 4.6.0 (2025-10-31 ucrt), Quarto 1.9.38, Pandoc 3.8.3. -->
+
+## [v1.0.2](`r tag_url("v1.0.2")`) --- 2026-10-31 (no release)
+
+- **Type:** Maintenance
+  - Update of computing environment (only)
 - **Corrections:** None
 - **Additions:** None
-- **Major changes:** None
+- **Major changes:** 
+  1. R updated from 4.5.2 to 4.6.0 (newest available at workplace)
+  2. All R packages updated to newest available version and `renv.lock` file updated.
 - **Minor changes:** None
-- **Effect on results:** None 
-  - Reproducibility checks showed no differences to `v1.0.1`.
-- **Commit:** [HEAD](`r main_url`)
-- **Changes to code:** [compare-view](`r compare2prev("v1.0.1", current = "main")`)
-- **Environment:** R version 4.5.2 (2025-10-31 ucrt), Quarto 1.9.38, Pandoc 3.8.3.
+- **Effect on results:** 
+  - Reproducibility checks showed no differences in any published results to `v1.0.1`.
+  - The attributes of some model objects (MMRM) stored alongside the datasets changed due to package updates. This had no influence on the analysis results to a tolerance of $10^{-6}$ and no number in the published results changed due to this update of the computing environment.
+- **Commit:** [`r tag_sha("v1.0.2", warn = FALSE)`](`r tag_sha("v1.0.2", warn = FALSE) |> tag_url()`)
+- **Changes to code:** [compare-view](`r compare2prev("v1.0.1", current = "v1.0.2")`)
+- **Environment:** R version 4.6.0 (2025-10-31 ucrt), Quarto 1.9.38, Pandoc 3.8.3.
 
 
 ## [v1.0.1](`r tag_url("v1.0.1")`) --- 2026-10-30 (no release)

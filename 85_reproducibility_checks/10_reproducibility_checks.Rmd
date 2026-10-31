@@ -61,8 +61,7 @@ ref_repo <- paste0(ref_dir, version)
 stopifnot(dir.exists(ref_repo))
 ```
 
-Define functions to print relevant differences from results of compare functions and optionally stop processing with an error:
-```{r}
+```{r print_and_stop_fcts, echo=FALSE, eval=TRUE}
 print_html_diffs <- function(diffs) {
   sum_diffs <- diffs$summary
   has_t_diffs <- sum_diffs[, which(table_diffs > 0)]
@@ -139,26 +138,41 @@ stop_html_diffs(diffs, stop_on_error = params$stop_on_error)
 
 ## Check reproducibility of output database
 
-Check output database stored as `data.table` objects in `rds` files:
-```{r output_db}
+Changes to `v1.0.1` occur after update of R from 4.5.2 to 4.6.0 and associated update of all R packages to newest released binary version (all on CRAN except CRP which is on GitHub). These changes are limited to attributes (model objects) of the saved results:
+```{r output_db_incl_attributes}
 diffs <- compare_rds_files(reference_path = ref_repo,
                            new_path       = ".",
                            folder         = "50_output_db/outputs",
                            tolerance      = 1e-6, 
                            copy_files     = TRUE, 
                            verbose        = TRUE)
+sum_diffs <- diffs$summary
+sum_diffs[which(n_diffs > 0)]
+```
+
+Ignoring attributes in the comparison confirms that none of the results stored as `data.table` objects in `rds` files changed:
+```{r output_db}
+diffs <- compare_rds_files(reference_path = ref_repo,
+                           new_path       = ".",
+                           folder         = "50_output_db/outputs",
+                           tolerance      = 1e-6, 
+                           copy_files     = TRUE, 
+                           verbose        = TRUE,
+                           ignore_attr    = TRUE)
+
 print_rds_diffs(diffs)
 stop_rds_diffs(diffs, stop_on_error = params$stop_on_error)
 ```
 
-Repeat checks to report any differences regardless of tolerance:
+Repeat checks to report any differences regardless of tolerance: (some numerically irrelevant changes occured)
 ```{r output_db_tol_NULL}
 diffs <- compare_rds_files(reference_path = ref_repo,
                            new_path       = ".",
                            folder         = "50_output_db/outputs",
                            tolerance      = NULL, 
                            copy_files     = TRUE, 
-                           verbose        = TRUE)
+                           verbose        = TRUE, 
+                           ignore_attr    = TRUE)
 print_rds_diffs(diffs)
 stop_rds_diffs(diffs, stop_on_error = FALSE)
 ```
@@ -236,7 +250,7 @@ Repeat checks to report any differences regardless of tolerance:
 ```{r par_prog_tol_NULL}
 diffs <- compare_rds_files(reference_path = ref_repo,
                            new_path       = ".",
-                           folder         = "02_data_derived",
+                           folder         = "80_parallel_programming/pp_outputs",
                            tolerance      = NULL, 
                            copy_files     = TRUE, 
                            verbose        = TRUE)
@@ -246,6 +260,12 @@ stop_rds_diffs(diffs, stop_on_error = FALSE)
 
 
 ## Appendix
+
+### Print and stop functions
+
+```{r print_and_stop_fcts, echo=TRUE, eval=FALSE}
+```
+
 
 ### **R** session info
 

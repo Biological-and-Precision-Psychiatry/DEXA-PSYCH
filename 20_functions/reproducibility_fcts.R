@@ -14,6 +14,7 @@
 #' reference_path points to a network drive where copy before reading is faster
 #' than reading directly.
 #' @param verbose print progress?
+#' @param ... arguments passed on to `waldo::compare()`
 #'
 #' @returns a list with `summary`, `table_diffs` and `footer_diffs`.
 #' 
@@ -24,7 +25,8 @@ compare_rds_files <- function(
     folder     = "tables",          # folder in repo with rds files
     tolerance  = NULL,
     copy_files = TRUE,
-    verbose    = TRUE) {
+    verbose    = TRUE, 
+    ...) {
   stopifnot(dir.exists(reference_path),
             dir.exists(new_path),
             dir.exists(paste0(reference_path, "/", folder)),
@@ -73,7 +75,7 @@ compare_rds_files <- function(
     tryCatch({
       old <- readRDS(paste0(ref_dir, "/", fn))
       new <- readRDS(paste0(new_dir, "/", fn))
-      waldo::compare(old, new, tolerance = tolerance)
+      waldo::compare(old, new, tolerance = tolerance, ...)
     }, error = function(e) {
       paste("Error reading/comparing file:", conditionMessage(e))
     })
@@ -104,6 +106,7 @@ compare_rds_files <- function(
 #' reference_path points to a network drive where copy before reading is faster
 #' than reading directly.
 #' @param verbose print progress?
+#' @param ... arguments passed on to `waldo::compare()`
 #'
 #' @returns a list with `summary`, `table_diffs` and `footer_diffs`.
 #'
@@ -113,7 +116,8 @@ compare_html_tables <- function(
     new_path   = ".",               # path to new repo root
     folder     = "tables",          # folder in in repo with html files
     copy_files = TRUE,
-    verbose    = TRUE) {
+    verbose    = TRUE,
+    ...) {
   stopifnot(dir.exists(reference_path),
             dir.exists(new_path),
             dir.exists(paste0(reference_path, "/", folder)),
@@ -162,8 +166,8 @@ compare_html_tables <- function(
     tryCatch({
       old <- get_html_gt_tab(paste0(ref_dir, "/", fn))
       new <- get_html_gt_tab(paste0(new_dir, "/", fn))
-      list(footer = waldo::compare(old$footer, new$footer),
-           table  = waldo::compare(old$table, new$table))
+      list(footer = waldo::compare(old$footer, new$footer, ...),
+           table  = waldo::compare(old$table, new$table, ...))
     }, error = function(e) {
       msg <- paste("Error reading/comparing file:", conditionMessage(e))
       list(table = msg, footer = msg)
