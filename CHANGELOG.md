@@ -33,7 +33,8 @@ documented here.**
 - **Corrections:** None
 - **Additions:** None
 - **Major changes:** None
-- **Minor changes:** None
+- **Minor changes:**
+  1.  Edits to `README.md`
 - **Effect on results:**
   - Reproducibility checks showed no differences in any published
     results to `v1.0.2`.

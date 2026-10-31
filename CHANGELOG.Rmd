@@ -114,7 +114,8 @@ stopifnot(R.version.string == "R version 4.6.0 (2026-04-24 ucrt)",
 - **Corrections:** None
 - **Additions:** None
 - **Major changes:** None
-- **Minor changes:** None
+- **Minor changes:** 
+  1. Edits to `README.md`
 - **Effect on results:**
   - Reproducibility checks showed no differences in any published results to `v1.0.2`.
 - **Commit:** [HEAD](`r main_url`)
