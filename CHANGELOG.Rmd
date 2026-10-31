@@ -78,6 +78,11 @@ stopifnot(R.version.string == "R version 4.6.0 (2026-04-24 ucrt)",
           quarto_v == "1.9.38",
           pandoc_v == "3.8.3")
 
+# Code to create a file with checksums for zip archive of tagged repo:
+# zipfile <- "../v1.0.2.zip"
+# file.exists(zipfile)
+# digest::digest(file = "../v1.0.2.zip", algo = "sha256") |> writeLines(con = "../v1.0.2.zip.sha256")
+
 ```
 
 
@@ -102,22 +107,20 @@ stopifnot(R.version.string == "R version 4.6.0 (2026-04-24 ucrt)",
 | Correction  | Visible changes to presented results.               | `vx.0.0` |
 
 
-<!-- ## [v1.0.2-draft](`r main_url`) --- `r Sys.Date()` (no release) -->
+## [v1.0.3-draft](`r main_url`) --- `r Sys.Date()` (no release)
 
-<!-- - **Type:** Maintenance -->
-<!-- - **Summary:**: Update of computing environment (only) -->
-<!-- - **Corrections:** None -->
-<!-- - **Additions:** None -->
-<!-- - **Major changes:**  -->
-<!--   1. R updated from 4.5.2 to 4.6.0 (newest available at workplace) -->
-<!--   2. All R packages updated to newest available version and `renv.lock` file updated. -->
-<!-- - **Minor changes:** None -->
-<!-- - **Effect on results:**  -->
-<!--   - Reproducibility checks showed no differences in any published results to `v1.0.1`. -->
-<!--   - The attributes of some model objects (MMRM) stored alongside the datasets changed due to package updates. This had no influence on the analysis results to a tolerance of $10^{-6}$ and consequently no number in the published results changed due to this update of the computing environment. -->
-<!-- - **Commit:** [HEAD](`r main_url`) -->
-<!-- - **Changes to code:** [compare-view](`r compare2prev("v1.0.1", current = "main")`) -->
-<!-- - **Environment:** R version 4.6.0 (2025-10-31 ucrt), Quarto 1.9.38, Pandoc 3.8.3. -->
+- **Type:** Maintenance
+- **Summary:**: Update of computing environment (only)
+- **Corrections:** None
+- **Additions:** None
+- **Major changes:** None
+- **Minor changes:** None
+- **Effect on results:**
+  - Reproducibility checks showed no differences in any published results to `v1.0.2`.
+- **Commit:** [HEAD](`r main_url`)
+- **Changes to code:** [compare-view](`r compare2prev("v1.0.2", current = "main")`)
+- **Environment:** R version 4.6.0 (2025-10-31 ucrt), Quarto 1.9.38, Pandoc 3.8.3.
+
 
 ## [v1.0.2](`r tag_url("v1.0.2")`) --- 2026-10-31 (no release)
 

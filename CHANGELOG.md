@@ -26,35 +26,23 @@ documented here.**
 | Addition    | New results. Existing results are unchanged.        | `v1.x.0` |
 | Correction  | Visible changes to presented results.               | `vx.0.0` |
 
-<!-- ## [v1.0.2-draft](https://github.com/Biological-and-Precision-Psychiatry/DEXA-PSYCH/tree/main) --- 2026-10-31 (no release) -->
+## [v1.0.3-draft](https://github.com/Biological-and-Precision-Psychiatry/DEXA-PSYCH/tree/main) — 2026-10-31 (no release)
 
-<!-- - **Type:** Maintenance -->
-
-<!-- - **Summary:**: Update of computing environment (only) -->
-
-<!-- - **Corrections:** None -->
-
-<!-- - **Additions:** None -->
-
-<!-- - **Major changes:**  -->
-
-<!--   1. R updated from 4.5.2 to 4.6.0 (newest available at workplace) -->
-
-<!--   2. All R packages updated to newest available version and `renv.lock` file updated. -->
-
-<!-- - **Minor changes:** None -->
-
-<!-- - **Effect on results:**  -->
-
-<!--   - Reproducibility checks showed no differences in any published results to `v1.0.1`. -->
-
-<!--   - The attributes of some model objects (MMRM) stored alongside the datasets changed due to package updates. This had no influence on the analysis results to a tolerance of $10^{-6}$ and consequently no number in the published results changed due to this update of the computing environment. -->
-
-<!-- - **Commit:** [HEAD](https://github.com/Biological-and-Precision-Psychiatry/DEXA-PSYCH/tree/main) -->
-
-<!-- - **Changes to code:** [compare-view](https://github.com/Biological-and-Precision-Psychiatry/DEXA-PSYCH/compare/v1.0.1...main) -->
-
-<!-- - **Environment:** R version 4.6.0 (2025-10-31 ucrt), Quarto 1.9.38, Pandoc 3.8.3. -->
+- **Type:** Maintenance
+- **Summary:**: Update of computing environment (only)
+- **Corrections:** None
+- **Additions:** None
+- **Major changes:** None
+- **Minor changes:** None
+- **Effect on results:**
+  - Reproducibility checks showed no differences in any published
+    results to `v1.0.2`.
+- **Commit:**
+  [HEAD](https://github.com/Biological-and-Precision-Psychiatry/DEXA-PSYCH/tree/main)
+- **Changes to code:**
+  [compare-view](https://github.com/Biological-and-Precision-Psychiatry/DEXA-PSYCH/compare/v1.0.2...main)
+- **Environment:** R version 4.6.0 (2025-10-31 ucrt), Quarto 1.9.38,
+  Pandoc 3.8.3.
 
 ## [v1.0.2](https://github.com/Biological-and-Precision-Psychiatry/DEXA-PSYCH/tree/v1.0.2) — 2026-10-31 (no release)
 
@@ -76,7 +64,7 @@ documented here.**
     the published results changed due to this update of the computing
     environment.
 - **Commit:**
-  [main](https://github.com/Biological-and-Precision-Psychiatry/DEXA-PSYCH/tree/main)
+  [8653fdec380aacad4be8bf61b643affcb36c6b0d](https://github.com/Biological-and-Precision-Psychiatry/DEXA-PSYCH/tree/8653fdec380aacad4be8bf61b643affcb36c6b0d)
 - **Changes to code:**
   [compare-view](https://github.com/Biological-and-Precision-Psychiatry/DEXA-PSYCH/compare/v1.0.1...v1.0.2)
 - **Environment:** R version 4.6.0 (2025-10-31 ucrt), Quarto 1.9.38,
