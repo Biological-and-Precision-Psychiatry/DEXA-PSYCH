@@ -182,6 +182,12 @@ The code is organized in the following folder structure:
   programmed scripts to each other and compares these results to those
   produced by the pipeline. An error is reported if any differences in
   results are found.
+- `85_reproducibility_checks`: Scripts that compare results produced by
+  current code with previously produced versions of the results to
+  ensure that all results can be reproduced without unacknowledged
+  changes.
+- [`CHANGELOG.md`](CHANGELOG.md): Documents changes to the analysis code
+  and results.
 
 ### Materials produced by the code
 

@@ -147,6 +147,8 @@ The code is organized in the following folder structure:
 - `39_run_all`: The `00_run_all.Rmd` script that executes all code in the repo.
 - `40_tlf_source`: Files required to produce Quarto-books with results. 
 - `80_parallel_programming`: In addition to the automatic analysis in the pipeline, the primary analysis of the primary endpoint is also independently programmed by two separate statisticians (RHBC and ENSW). A separate script compares the results of the independently programmed scripts to each other and compares these results to those produced by the pipeline. An error is reported if any differences in results are found.
+- `85_reproducibility_checks`: Scripts that compare results produced by current code with previously produced versions of the results to ensure that all results can be reproduced without unacknowledged changes.
+- [`CHANGELOG.md`](CHANGELOG.md): Documents changes to the analysis code and results.
 
 
 ### Materials produced by the code
