@@ -47,9 +47,9 @@ clear_all <- function(remove                = TRUE,
 
 clear_html_pdf_res <- function(remove = TRUE, exclude = "^99") {
 
-  # Consider files in dirs that start with "3" or "80":
+  # Consider files in dirs that start with "3" or "8":
   dirs <- list.dirs(path = ".", recursive = FALSE, full.names = FALSE)
-  dirs <- getgrep("^3|^80", dirs)
+  dirs <- getgrep("^3|^8", dirs)
   
   # Get paths to files to remove:
   files <- lapply(dirs, function(dir) {
@@ -65,8 +65,8 @@ clear_html_pdf_res <- function(remove = TRUE, exclude = "^99") {
   removed <- if(remove) file.remove(files) else FALSE
   return(data.table(files, removed))
 }
-# clear_html_res(remove = FALSE)
-# clear_html_res(remove = TRUE)
+# clear_html_pdf_res(remove = FALSE)
+# clear_html_pdf_res(remove = TRUE)
 
 
 clear_data_derived <- function(path    = "02_data_derived", 
