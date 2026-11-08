@@ -26,13 +26,16 @@ documented here.**
 | Addition    | New results. Existing results are unchanged.        | `v1.x.0` |
 | Correction  | Visible changes to presented results.               | `vx.0.0` |
 
-## [v1.0.3-draft](https://github.com/Biological-and-Precision-Psychiatry/DEXA-PSYCH/tree/main) — 2026-10-31 (no release)
+## [v1.0.3-draft](https://github.com/Biological-and-Precision-Psychiatry/DEXA-PSYCH/tree/main) — 2026-11-08 (no release)
 
 - **Type:** Maintenance
 - **Summary:**: Update of computing environment (only)
 - **Corrections:** None
 - **Additions:** None
-- **Major changes:** None
+- **Major changes:**
+  1.  [DEXA-PSYCH
+      website](https://biological-and-precision-psychiatry.github.io/DEXA-PSYCH/)
+      added.
 - **Minor changes:**
   1.  Edits to `README.md`
 - **Effect on results:**

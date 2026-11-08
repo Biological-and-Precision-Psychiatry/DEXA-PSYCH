@@ -55,11 +55,23 @@ tlf_ctr_badge <- doi_to_badge(tlf_ctr_doi)
 ```
 
 
-## Welcome to the **R** code base repository for the DEXA-PSYCH trial
+# Welcome to the **R** code base repository for the DEXA-PSYCH trial
+
+**Dexamethasone for moderate-to-severe depression---a double-blind, randomized, parallel-group, placebo-controlled trial**
+
+
+For information about the trial check out [the DEXA-PSYCH website](https://biological-and-precision-psychiatry.github.io/DEXA-PSYCH/).
+
+This README file describes the code base, the structure of the repository, what the code produces, and the computing environment required to reproduce the trial results.
+
+The repository contains all code to produce the pre-specified statistical analyses. This includes all analyses and results for the primary publication and pre-specified secondary analyses. 
+
+All code was written by Senior Statistician Rune Haubo B Christensen and Statistician and PhD Researcher Eva Nina Sparre Wandall. 
+
+### Quick links
 
 ------------------------------------------------------------------------
 
-> -   [**Authors (repo)**](CITATION.cff): Rune Haubo B. Christensen and Eva Nina Sparre Wandall
 > -   [**Primary-Publication**]() (Link will be updated upon publication)
 > -   [**Tables, Listings and Figures for primary publication**](https://dexa-psych.netlify.app/) (password-protected for reviewer access until the primary publication is published)
 > -   **EU Trial registration number**:  [2022-501428-45-00](https://euclinicaltrials.eu/ctis-public/view/2022-501428-45-00?lang=en)
@@ -67,6 +79,7 @@ tlf_ctr_badge <- doi_to_badge(tlf_ctr_doi)
 > -   [**Trial protocol**](https://euclinicaltrials.eu/ctis-public/view/2022-501428-45-00?lang=en) (latest version)
 > -   [**Trial protocol**](https://doi.org/10.1186/s13063-025-08989-2) (Journal publication of earlier version)
 > -   [**Statistical Analysis Plan**](`r sap_doi`)
+> -   [**Authors (repo)**](CITATION.cff): Rune Haubo B. Christensen and Eva Nina Sparre Wandall
 > -   **DEXA-PSYCH team**: 
 >     - [Troels Boldt Rømer](https://orcid.org/0000-0002-0832-2667) (Sub-Investigator)
 >     - [Camilla Goetzsche Frederiksen](https://orcid.org/0000-0002-4475-7617) (Sub-Investigator)
@@ -82,34 +95,6 @@ tlf_ctr_badge <- doi_to_badge(tlf_ctr_doi)
 >     - [Statistical Analysis Plan](`r sap_doi`)
 
 ------------------------------------------------------------------------
-
-The repository contains all code to produce the pre-specified statistical analyses. This includes all analyses and results for the primary publication and pre-specified secondary analyses. 
-
-The primary publication of the DEXA-PSYCH trial was published in [JOURNAL]() and available [here]() (Links will be updated upon publication.)
-
-The DEXA-PSYCH trial has EU Trial registration number [2022-501428-45-00](https://euclinicaltrials.eu/ctis-public/view/2022-501428-45-00?lang=en) with WHO universal Trial Identifier U1111-1280-7614.
-
-The Trial protocol is available [here](https://euclinicaltrials.eu/ctis-public/view/2022-501428-45-00?lang=en) in its latest version and an earlier version is presented in [Rømer et al (2025)](https://doi.org/10.1186/s13063-025-08989-2)
-
-The Statistical Analysis Plan (SAP) was archived and locked in a persistent and immutable [Zenodo DOI](`r sap_doi`) prior to unblinding of the randomization list. The time of unblinding coincides with locking of the database and is called *database lock* (DBL).
-
-The code is released in two versions: 
-[pre-dbl-v1.0](`r pre_dbl_url`) and [post-dbl-v1.0](`r post_dbl_url`). 
-Each version is archived in [Zenodo DOIs](`r code_doi`) and any differences between the two versions of the code base is documented. 
-
-All code was written by Senior Statistician Rune Haubo B Christensen and Statistician and PhD Researcher Eva Nina Sparre Wandall. 
-
-
-## Table, Listings and Figures books
-
-The code in this repository produces two Tables, Listings, and Figures (TLF) books; a primary publication version and a clinical trial report (CTR) version. 
-All outcomes are reported from day 0 to day 28. Long term follow-up (until 6 months after baseline) will be presented separately.
-
-1. Primary Publication: 
-This version documents all summaries and statistical analyses for safety and efficacy endpoints presented in the primary publication as documented in the SAP and trial protocol. This version is archived in a Zenodo DOI [here](`r tlf_pp_doi`).
-1. Clinical Trial Protocol (CTR): This version includes all content reported in the primary publication version but also presents results for additional secondary outcomes. Contents for the secondary outcomes will be released upon publication of secondary papers presenting the additional secondary outcomes. This version of the TLF-book is archived in a Zenodo DOI [here](`r tlf_ctr_doi`).
-
-The primary publication TLF-book is available [here](https://dexa-psych.netlify.app/) although it is password-protected for reviewer access until the primary publication is published.
 
 
 ## Description of the code base
@@ -148,6 +133,7 @@ The code is organized in the following folder structure:
 - `40_tlf_source`: Files required to produce Quarto-books with results. 
 - `80_parallel_programming`: In addition to the automatic analysis in the pipeline, the primary analysis of the primary endpoint is also independently programmed by two separate statisticians (RHBC and ENSW). A separate script compares the results of the independently programmed scripts to each other and compares these results to those produced by the pipeline. An error is reported if any differences in results are found.
 - `85_reproducibility_checks`: Scripts that compare results produced by current code with previously produced versions of the results to ensure that all results can be reproduced without unacknowledged changes.
+- `docs`: Website materials.
 - [`CHANGELOG.md`](CHANGELOG.md): Documents changes to the analysis code and results.
 
 

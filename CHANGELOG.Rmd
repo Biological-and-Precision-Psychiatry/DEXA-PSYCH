@@ -113,7 +113,8 @@ stopifnot(R.version.string == "R version 4.6.0 (2026-04-24 ucrt)",
 - **Summary:**: Update of computing environment (only)
 - **Corrections:** None
 - **Additions:** None
-- **Major changes:** None
+- **Major changes:** 
+  1. [DEXA-PSYCH website](https://biological-and-precision-psychiatry.github.io/DEXA-PSYCH/) added.
 - **Minor changes:** 
   1. Edits to `README.md`
 - **Effect on results:**
