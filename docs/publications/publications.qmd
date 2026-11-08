@@ -1,0 +1,40 @@
+---
+title: "Publications"
+listing:
+  - id: primary
+    contents: "*.qmd"
+    include:
+      categories: "Primary"
+    sort: "date desc"
+    fields: [title, subtitle, authors, date]
+    date-format: "YYYY"
+  - id: posthoc
+    contents: "*.qmd"
+    include:
+      categories: "Posthoc"
+    sort: "date desc"
+    fields: [title, subtitle, authors, date]
+    date-format: "YYYY"
+  - id: protocol
+    contents: "*.qmd"
+    include:
+      categories: "Protocol"
+    sort: "date desc"
+    fields: [title, subtitle, authors, date]
+    date-format: "YYYY"
+---
+
+## Primary
+
+:::{#primary}
+:::
+
+<!-- ## Post hoc -->
+
+<!-- :::{#posthoc} -->
+<!-- ::: -->
+
+## Protocol
+
+:::{#protocol}
+:::

@@ -1,0 +1,127 @@
+---
+title: "About"
+editor_options: 
+  chunk_output_type: console
+---
+
+
+The DEXA-PSYCH trial was conducted at the [Copenhagen Research Centre for Biological and Precision Psychiatry](https://research.regionh.dk/en/organisations/copenhagen-research-centre-for-biological-and-precision-psychiatr/), [Mental Health Centre Copenhagen](https://research.regionh.dk/en/organisations/psykiatrisk-center-k%C3%B8benhavn-bfh/organisations/), [Copenhagen University Hospital](https://research.regionh.dk/en/)---Bispebjerg and Frederiksberg, Copenhagen, Denmark.
+
+Find us on [GitHub](https://github.com/Biological-and-Precision-Psychiatry) and [LinkedIn](https://dk.linkedin.com/company/copenhagen-biological-and-precision-psychiatry). 
+
+The trial also has a [Danish website](https://www.psykiatri-regionh.dk/dexa-psych/Sider/default.aspx) with information for potential participants, medical practitioners and the danish public.
+
+
+## The DEXA-PSYCH Team
+
+
+```{r}
+#| label: setup_about
+#| include: false
+
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+
+```{r}
+#| include: false
+
+team <- yaml::read_yaml("docs/team.yml")
+cats <- sapply(team, "[[", "category")
+
+# label, URL prefix, URL suffix (the value from team.yml goes in between)
+templates <- list(
+  orcid    = c("ORCID",          "https://orcid.org/", ""),
+  github   = c("GitHub",         "https://github.com/", ""),
+  scholar  = c("Google Scholar", "https://scholar.google.com/citations?user=", ""),
+  pubmed   = c("PubMed",         "https://pubmed.ncbi.nlm.nih.gov/?term=", "%5BAuthor%5D"),
+  linkedin = c("LinkedIn",       "https://www.linkedin.com/in/", ""),
+  web      = c("Website",        "", "")
+)
+
+make_link <- function(key, value) {
+  t <- templates[[key]]
+  if (key == "pubmed") value <- gsub(" ", "+", value)
+  paste0('<a href="', t[2], value, t[3], '">', t[1], '</a>')
+}
+
+card <- function(p) {
+  links <- vapply(names(p$links),
+                  function(k) make_link(k, p$links[[k]]),
+                  character(1))
+  affiliation <- if (is.null(p$affiliation)) "" else p$affiliation
+  paste0(
+    '<div class="col"><div class="card h-100"><div class="card-body">\n',
+    '<h5 class="card-title">', p$name, '</h5>\n',
+    '<p class="card-subtitle text-muted">', p$role, '</p>\n',
+    '<p class="card-text small">', affiliation, '</p>\n',
+    '<p class="card-text small">', paste(links, collapse = " · "), '</p>\n',
+    '</div></div></div>'
+  )
+}
+```
+
+
+### Sponsor and Principal Investigator
+
+```{r}
+#| echo: false
+#| output: asis
+cat('<div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">',
+    vapply(team[cats == "sponsor"], card, character(1)),
+    '</div>', sep = "\n")
+```
+
+### MDs and PhD-Students on the Project
+
+```{r}
+#| echo: false
+#| output: asis
+cat('<div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">',
+    vapply(team[cats == "md_and_phd"], card, character(1)),
+    '</div>', sep = "\n")
+```
+
+### Statisticians
+
+```{r}
+#| echo: false
+#| output: asis
+cat('<div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">',
+    vapply(team[cats == "statisticians"], card, character(1)),
+    '</div>', sep = "\n")
+```
+
+### Research Nurses
+
+```{r}
+#| echo: false
+#| output: asis
+cat('<div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">',
+    vapply(team[cats == "nurses"], card, character(1)),
+    '</div>', sep = "\n")
+```
+
+
+## Funding
+
+The DEXA-PSYCH trial was funded by the following unrestricted research grants to Michael Eriksen Benros: 
+
+- An unrestricted research grant for investigator-initiated trials with a non-commercial focus awarded by [the Novo Nordisk Foundation](https://novonordiskfonden.dk/en/) (grant number NNF21OC0072020)
+-  [Mental Health Services in the Capital Region of Denmark](https://research.regionh.dk/en/organisations/psykiatrisk-center-k%C3%B8benhavn-bfh/organisations/)
+
+The funders had no role in the design or conduct of the trial, in the analysis or interpretation of data, or in the communication of trial results.
+
+
+## Approval
+
+The Trial was approved by
+
+- [The Danish Medicines Agency](https://laegemiddelstyrelsen.dk/en/), 
+- [The Danish Health Research Ethics Committee](https://www.regionh.dk/til-fagfolk/Forskning-og-innovation/De-regionale-videnskabsetiske-komiteer/Sider/default.aspx?rhKeywords=De+videnskabsetiske+komiteer), 
+- [The Capital Region Knowledge Center for Data Compliance](https://www.rigshospitalet.dk/afdelinger-og-klinikker/hovedorto/forskning/en-indgang-til-phd-livet/sider/datatilsynet-og-dataanmeldelser.aspx), and
+- Externally monitored by [the Good Clinical Practice (GCP) unit](https://gcp-enhed.dk/english/)
+
+
+All participants provided written informed consent. 
+

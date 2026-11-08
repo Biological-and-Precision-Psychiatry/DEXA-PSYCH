@@ -1,0 +1,32 @@
+---
+title: "The DEXA-PSYCH Study—dexamethasone for moderate-to-severe depression: study protocol for a double-blind, randomized, parallel-group, placebo-controlled trial"
+subtitle: "[Trials (2025) 26:303, doi: 10.1186/s13063-025-08989-2](https://doi.org/10.1186/s13063-025-08989-2)"
+authors: "Troels Boldt Rømer, Camilla Gøtzsche Frederiksen, Pernille Bølling Hansen, Rune Haubo Bojesen Christensen, Michael Eriksen Benros"
+date: 2025-08-25
+date-format: iso
+categories: [Protocol]
+---
+
+[Read the paper (open access)](https://doi.org/10.1186/s13063-025-08989-2){.btn .btn-primary}
+[Trial registration](https://euclinicaltrials.eu/ctis-public/view/2022-501428-45-00?lang=en){.btn .btn-outline-primary}
+<!-- [TLF book](../pp-tlf-book/){.btn .btn-outline-primary} -->
+
+## Abstract
+
+### Background
+
+Globally, depression represents one of the leading causes of years lived with disability. The effects of current pharmacological treatments are small-to-moderate and often delayed by weeks. Immunological disturbances have been associated with depression and meta-analyses have suggested that anti-inflammatory agents have moderate-to-large anti-depressant effects. The largest effects were reported for glucocorticoids. However, previous trials were too small to legitimize standard use of glucocorticoids as add-on treatment in depression. The purpose of the DEXA-PSYCH study is to investigate the effect and safety of short-term, oral dexamethasone compared to placebo as add-on therapy in moderate-to-severe depression.
+
+### Methods
+
+The DEXA-PSYCH trial is an investigator-initiated, double-blind, randomized, placebo-controlled, parallel-group superiority trial. Three-hundred participants meeting criteria for moderate-to-severe depression will be randomized in a 1:1 ratio to 1 week of either dexamethasone (4 mg/day for 4 days, subsequently 2 mg/day for 3 days) or placebo as add-on treatment to treatment as usual. Both in- and out-patients are eligible. Exclusion criteria include, but are not limited to, psychotic disorders, bipolar disorder, and diabetes. The primary outcome is change from baseline in Montgomery-Asberg Depression Rating Scale (MADRS) score on day 7 and will be analyzed through a Mixed Model for Repeated Measurements (MMRM) in an intention-to-treat analysis. Key secondary outcomes include response and remission rates, efficacy 3 weeks after the intervention, effects on quality of life, and safety outcomes. Other secondary outcomes include overall functioning, fatigue, anxiety, labor-market affiliation, and associations between inflammatory biomarkers and treatment response.
+
+### Discussion
+
+The DEXA-PSYCH trial represents the largest trial of its kind globally. If the trial confirms findings from previous, smaller studies, short-term oral dexamethasone could become an attractive augmentation strategy if acute anti-depressant effects are warranted. Dexamethasone is an off-patent, well-known drug readily repurposed for new indications.
+
+### Trial registration
+
+EU Clinical Trials Number 2022–501428-45–00, Registered 25th of July 2022 in the EU Clinical Trials Information System (<https://euclinicaltrials.eu/ctis-public/view/2022-501428-45-00?lang=en>). WHO Universal Trial Identifier U1111-1280–7614.
+
+

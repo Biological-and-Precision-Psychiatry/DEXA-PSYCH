@@ -1,0 +1,144 @@
+---
+title: "The DEXA-PSYCH trial"
+subtitle: "Dexamethasone for moderate-to-severe depression---a double-blind, randomized, parallel-group, placebo-controlled trial"
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r}
+#| label: setup_index
+#| include: false
+library(gert)
+library(data.table)
+
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+
+```{r}
+#| label: get_urls
+#| include: false
+
+# Get list of Git info:
+info <- gert::git_info()
+
+# Get github-url to repo:
+remotes      <- gert::git_remote_list()
+url          <- remotes$url[remotes$name == "origin"]
+url          <- gsub("\\.git$", "", url)
+pre_dbl_url  <- paste0(url, "/releases/tag/pre-dbl-v1.0")
+post_dbl_url <- paste0(url, "/releases/tag/post-dbl-v1.0")
+commit_url   <- paste0(url, "/tree/", info$commit)
+diff_url     <- paste0(url, "/compare/pre-dbl-v1.0...post-dbl-v1.0")
+citation_url <- paste0(url, "/blob/main/CITATION.cff")
+renvlock_url <- paste0(url, "/blob/main/renv.lock")
+
+# List registered DOIs:
+sap_doi       <- "https://doi.org/10.5281/zenodo.23343482"
+code_doi      <- "https://doi.org/10.5281/zenodo.23341773"
+code_doi_post <- "https://doi.org/10.5281/zenodo.23587985"
+tlf_pp_doi    <- "https://doi.org/10.5281/zenodo.23350243"
+tlf_ctr_doi   <- "https://doi.org/10.5281/zenodo.23349388"
+
+doi_to_badge <- function(doi) 
+  paste0("[![DOI](https://zenodo.org/badge/DOI/", 
+                     gsub("https://doi.org/", "", doi, fixed = TRUE),
+                     ".svg)](", doi, ")")
+sap_badge     <- doi_to_badge(sap_doi)
+code_badge    <- doi_to_badge(code_doi)
+tlf_pp_badge  <- doi_to_badge(tlf_pp_doi)
+tlf_ctr_badge <- doi_to_badge(tlf_ctr_doi)
+```
+
+
+The DEXA-PSYCH trial is an investigator-initiated, double-blind, randomized, placebo-controlled, parallel
+group superiority trial. Three-hundred participants meeting criteria for moderate-to-severe depression were 
+randomized in a 1:1 ratio to 1 week of either dexamethasone or placebo as add-on treatment to treatment as usual.
+
+**Sponsor Institution:** [Copenhagen Research Centre for Biological and Precision Psychiatry](https://research.regionh.dk/en/organisations/copenhagen-research-centre-for-biological-and-precision-psychiatr/), Mental Health Centre Copenhagen, Copenhagen University Hospital---Bispebjerg and Frederiksberg, Copenhagen, Denmark.
+
+**Sponsor and Principal Investigator:**  [Michael Eriksen Benros](about.qmd#sponsor-and-principal-investigator).
+
+## Status
+
+Per date: 2026-11-08
+
+- **Enrollment:** Done. 300 participants randomized.
+- **Completion:** Main trial (up to day 28 visit) is complete. Six-month follow-up is on-going.
+
+For further details, see [the timeline](#sec-timeline).
+
+## Background
+
+Depression is one of the leading causes of years lived with disability, globally. The effects 
+of current pharmacological treatments are small-to-moderate and often delayed by weeks. Immunological
+disturbances have been associated with depression and meta-analyses have suggested that anti-inflammatory agents have moderate-to-large anti-depressant effects. 
+The largest effects were reported for glucocorticoids. However, previous trials were too small to legitimize standard use of glucocorticoids as add-on treatment in depression. 
+
+
+## Purpose
+
+The purpose of the DEXA-PSYCH trial was to investigate the effect and safety of short-term, oral dexamethasone compared to placebo as add-on therapy in moderate-to-severe depression.
+
+
+## Trial results
+
+All pre-specified and pre-programmed trial results are available in Tables, Listings and Figures (TLF) book [here](tlf-book-pp/latest/index.html). (Link will contain trial results upon publication of the primary outcome paper. Pre-publication reviewer access is available at <https://dexa-psych.netlify.app/>)
+
+For further details see the [trial results page](/results.qmd).
+
+
+## Publications
+
+The primary publication of the DEXA-PSYCH trial is available [here]() (Link will go live upon publication of the primary paper.) For more information on publications see [here](publications.qmd).
+
+
+## Protocol and Trial registration
+
+The DEXA-PSYCH trial has EU Trial registration number [2022-501428-45-00](https://euclinicaltrials.eu/ctis-public/view/2022-501428-45-00?lang=en) with WHO universal Trial Identifier U1111-1280-7614.
+
+The Trial protocol is available [here](https://euclinicaltrials.eu/ctis-public/view/2022-501428-45-00?lang=en) in its latest version and an earlier version is presented in [Rømer et al (2025)](https://doi.org/10.1186/s13063-025-08989-2).
+
+
+## Statistical Analysis Plan
+
+The Statistical Analysis Plan (SAP) was archived and locked in a persistent and immutable [Zenodo DOI](`r sap_doi`) prior to unblinding of the randomization list. The time of unblinding coincides with locking of the database and is called *database lock* (DBL).
+
+
+## Analysis code
+
+All code to produce the statistical analyses is openly shared on the [DEXA-PSYCH GitHub repository](https://github.com/Biological-and-Precision-Psychiatry/DEXA-PSYCH). 
+
+Analyses were programmed with dummy treatment-group identifiers, and the code was archived before unblinding. 
+The primary analysis of the primary endpoint was independently parallel programmed by two separate statisticians.
+
+The [README file](https://github.com/Biological-and-Precision-Psychiatry/DEXA-PSYCH/blob/main/README.md) describes the structure and contents of the code base.
+
+The [Change log](https://github.com/Biological-and-Precision-Psychiatry/DEXA-PSYCH/blob/main/CHANGELOG.md) describes the evolution and maintenance of the code base and new releases of trial results.
+
+
+## Timeline {#sec-timeline}
+
+The key timeline for the main trial is as follows:
+
+- 2021-12-09: Grant awarded from [the Novo Nordisk Foundation](https://novonordiskfonden.dk/en/)
+- 2022-07-25: Pre-registration on [the EU Clinical Trials Information System](https://euclinicaltrials.eu/ctis-public/view/2022-501428-45-00?lang=en) and submission for authority approval
+- 2022-10-21: Approval granted by [the Danish Medicines Agency](https://laegemiddelstyrelsen.dk/en/) and [the Danish Health Research Ethics Committee](https://www.regionh.dk/til-fagfolk/Forskning-og-innovation/De-regionale-videnskabsetiske-komiteer/Sider/default.aspx?rhKeywords=De+videnskabsetiske+komiteer)
+- 2022-12-28: Recruitment initiated
+- 2023-01-13: First patient randomized
+- 2026-04-16: Last version of the protocol (version 1.4) approved by the authorities and  [published](https://euclinicaltrials.eu/ctis-public/view/2022-501428-45-00?lang=en)
+- 2026-10-12: Day-28 visit of the last patient
+- 2026-10-19: Final external monitoring by [the Good Clinical Practice (GCP) unit](https://gcp-enhed.dk/english/)
+- 2026-10-20: Statistical analysis plan locked in [Zenodo DOI](`r sap_doi`)
+- 2026-10-21: Database locked, Statistical analysis code finalized and locked in [Zenodo DOI](`r code_doi`)
+- 2026-10-22: Randomization list received: unblinding of statisticians, principal investigator and selected sub-investigators
+- 2026-10-23: All Pre-specified analyses run and results archived in [Zenodo DOI](`r tlf_pp_doi`) and post-unblinding code
+archived in [Zenodo DOI](`r code_doi_post`)
+- 2026-mm-dd: Primary publication published
+
+
+As of October 2026 three assessors remain unblinded to collect 6-month follow-up data. The last follow-up data is expected to be collected March 2027.
+
+A [Zenodo](https://zenodo.org/) archive is a time-stamped, and immutable snapshot of a research output (such as software, data, or publications) stored in Zenodo and assigned a DOI (Digital Object Identifier) for permanent reference. 
+

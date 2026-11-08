@@ -1,0 +1,18 @@
+---
+title: "Short-Course Dexamethasone for Moderate-to-Severe Depression"
+subtitle: "In Preparation"
+authors: "Troels Boldt Rømer, Camilla Gøtzsche Frederiksen, Pernille Bølling Hansen, Eva Nina Sparre Wandall, Sille Holst, Rune Haubo B Christensen, Michael Eriksen Benros"
+date-format: iso
+categories: [Primary]
+---
+
+<!-- [Read the paper (open access)](https://doi.org/10.1186/s13063-025-08989-2){.btn .btn-primary} -->
+[Trial registration](https://euclinicaltrials.eu/ctis-public/view/2022-501428-45-00?lang=en){.btn .btn-outline-primary}
+<!-- [TLF book](../pp-tlf-book/){.btn .btn-outline-primary} -->
+
+## Abstract
+
+Pending...
+
+
+

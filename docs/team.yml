@@ -1,0 +1,55 @@
+- name: Troels Boldt Rømer
+  category: md_and_phd
+  role: MD, PhD-Student
+  affiliation: Sub-Investigator
+  links:
+    orcid: 0000-0002-0832-2667
+    github: TroelsRomer
+    scholar: Axf2x-EAAAAJ&hl
+
+- name: Camilla Goetzsche Frederiksen
+  category: md_and_phd
+  role: MD, PhD-Student
+  affiliation: Sub-Investigator
+  links:
+    orcid: 0000-0002-4475-7617
+
+- name: Pernille Bølling Hansen
+  category: md_and_phd
+  role: MD
+  affiliation: Sub-Investigator
+
+- name: Sille Holst
+  category: nurses
+  role: RN
+  affiliation: Research Nurse
+
+- name: Rune Haubo B Christensen
+  category: statisticians
+  role: MSc, PhD
+  affiliation: Lead Trial Statistician
+  links:
+    orcid: 0000-0002-4494-3399
+    github: runehaubo
+    scholar: Bdq1FoIAAAAJ&hl
+
+- name: Eva Nina Sparre Wandall
+  category: statisticians
+  role: MSc, PhD-Student
+  affiliation: Trial Statistician
+  links:
+    orcid: 0009-0008-1745-6027
+    github: evaninawandall
+    scholar: a-APcdoAAAAJ&hl
+
+    
+- name: Michael Eriksen Benros
+  category: sponsor
+  role: Professor, Head of Research, Chief Physician, MD, PhD
+  affiliation: Sponsor & Principal Investigator
+  links:
+    orcid: 0000-0003-4939-9465
+    github: MichaelBenros
+    scholar: AbCdEfGhIjK
+    web: https://research.regionh.dk/en/persons/michael-eriksen-benros/
+

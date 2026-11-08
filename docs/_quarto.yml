@@ -1,0 +1,40 @@
+project:
+  type: website
+  output-dir: .
+
+website:
+  favicon: dexa-psych-logo.png
+  repo-url: https://github.com/Biological-and-Precision-Psychiatry/DEXA-PSYCH
+  repo-branch: main
+  repo-actions: [issue]
+  navbar:
+    logo: dexa-psych-logo.png
+    background: primary
+    search: false
+    left:
+      - text: "Home"
+        href: index.qmd
+      - text: "Trial results"
+        href: results.qmd
+      - text: "Publications"
+        href: publications/publications.qmd
+      - text: "About"
+        href: about.qmd
+  page-footer:
+    left: "Website by Rune Haubo B Christensen"
+    right:
+      - icon: github
+        href: https://github.com/Biological-and-Precision-Psychiatry
+      - icon: linkedin
+        href: https://dk.linkedin.com/company/copenhagen-biological-and-precision-psychiatry
+
+format:
+  html:
+    theme:
+      - cosmo
+      - brand
+    css: styles.css
+    toc: true
+
+
+
