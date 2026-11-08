@@ -44,7 +44,7 @@ archive*
 *.pdf
 *.md
 !40_tlf_source/toc-scroll.html
-!docs/*.html
+!docs/**/*.html
 !README.md
 !CHANGELOG.md
 
